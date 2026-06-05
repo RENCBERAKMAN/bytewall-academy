@@ -28,25 +28,25 @@ The primary specialisation target is **OT/ICS Security** — the intersection of
 
 | Stage | Title | Status |
 |-------|-------|--------|
-| [STAGE-00](./STAGE-00_Foundations) | **Foundations** — Hardware, OS, Windows, Linux, Programming | 🟡 In Progress |
-| [STAGE-01](./STAGE-01_Network-Fundamentals) | **Network Fundamentals** — OSI, TCP/IP, Protocols, Analysis | ⬜ Upcoming |
-| [STAGE-02](./STAGE-02_CyberSecurity-Fundamentals) | **Cybersecurity Core** — CIA, Cryptography, IAM, Frameworks | ⬜ Upcoming |
-| [STAGE-03](./STAGE-03_Offense-and-Defense) | **Attack Methods & Defence** — Malware, Social Engineering, Web Attacks | ⬜ Upcoming |
-| [STAGE-04](./STAGE-04_Penetration-Testing) | **Penetration Testing** — Methodology, OSINT, Exploitation, Reporting | ⬜ Upcoming |
-| [STAGE-05](./STAGE-05_Network-Security) | **Network Security** — Firewall, IDS/IPS, VPN, Segmentation | ⬜ Upcoming |
-| [STAGE-06](./STAGE-06_Web-Application-Security) | **Web Application Security** — OWASP Top 10, Burp Suite, Secure Dev | ⬜ Upcoming |
-| [STAGE-07](./STAGE-07_Active-Directory) | **Active Directory Security** — Kerberos, BloodHound, AD Attacks | ⬜ Upcoming |
-| [STAGE-08](./STAGE-08_Cloud-Security) | **Cloud Security** — AWS, Azure, GCP, Kubernetes | ⬜ Upcoming |
-| [STAGE-09](./STAGE-09_Incident-Response-Forensics) | **IR & Digital Forensics** — Memory, Disk, Malware Analysis, SIEM | ⬜ Upcoming |
-| [STAGE-10](./STAGE-10_SOC) | **SOC Operations** — Threat Hunting, CTI, SOAR | ⬜ Upcoming |
-| [STAGE-11](./STAGE-11_Hardening) | **System Hardening** — Windows, Linux, Network Devices | ⬜ Upcoming |
-| [STAGE-12](./STAGE-12_OT-SCADA-ICS) | **OT/SCADA/ICS Security** ⭐ — Protocols, Architecture, Real-World Cases | ⬜ Upcoming |
-| [STAGE-13](./STAGE-13_Red-Team) | **Red Team Operations** — C2, Adversary Simulation, Physical | ⬜ Upcoming |
-| [STAGE-14](./STAGE-14_Blue-Team-Advanced) | **Advanced Blue Team** — Threat Modelling, Deception, Architecture | ⬜ Upcoming |
-| [STAGE-15](./STAGE-15_Development-Automation) | **Development & Automation** — Python, Bash, PowerShell, Tool Dev | ⬜ Upcoming |
-| [STAGE-16](./STAGE-16_Advanced-Topics) | **Advanced Topics** — Reverse Engineering, Exploit Dev, Mobile, IoT | ⬜ Upcoming |
-| [STAGE-17](./STAGE-17_Career-Certifications) | **Career & Certifications** — OSCP, GICSP, CISSP, Job Strategy | ⬜ Upcoming |
-| [STAGE-18](./STAGE-18_Platforms-Resources) | **Platforms & Resources** — TryHackMe, HTB, CTF, Communities | ⬜ Upcoming |
+| [STAGE-00](./STAGE-00_Foundations) | **Foundations** — Hardware, OS, Windows, Linux, Programming |
+| [STAGE-01](./STAGE-01_Network-Fundamentals) | **Network Fundamentals** — OSI, TCP/IP, Protocols, Analysis |
+| [STAGE-02](./STAGE-02_CyberSecurity-Fundamentals) | **Cybersecurity Core** — CIA, Cryptography, IAM, Frameworks |
+| [STAGE-03](./STAGE-03_Offense-and-Defense) | **Attack Methods & Defence** — Malware, Social Engineering, Web Attacks |
+| [STAGE-04](./STAGE-04_Penetration-Testing) | **Penetration Testing** — Methodology, OSINT, Exploitation, Reporting |
+| [STAGE-05](./STAGE-05_Network-Security) | **Network Security** — Firewall, IDS/IPS, VPN, Segmentation |
+| [STAGE-06](./STAGE-06_Web-Application-Security) | **Web Application Security** — OWASP Top 10, Burp Suite, Secure Dev |
+| [STAGE-07](./STAGE-07_Active-Directory) | **Active Directory Security** — Kerberos, BloodHound, AD Attacks | 
+| [STAGE-08](./STAGE-08_Cloud-Security) | **Cloud Security** — AWS, Azure, GCP, Kubernetes | 
+| [STAGE-09](./STAGE-09_Incident-Response-Forensics) | **IR & Digital Forensics** — Memory, Disk, Malware Analysis, SIEM |
+| [STAGE-10](./STAGE-10_SOC) | **SOC Operations** — Threat Hunting, CTI, SOAR | 
+| [STAGE-11](./STAGE-11_Hardening) | **System Hardening** — Windows, Linux, Network Devices | 
+| [STAGE-12](./STAGE-12_OT-SCADA-ICS) | **OT/SCADA/ICS Security** ⭐ — Protocols, Architecture, Real-World Cases | 
+| [STAGE-13](./STAGE-13_Red-Team) | **Red Team Operations** — C2, Adversary Simulation, Physical |
+| [STAGE-14](./STAGE-14_Blue-Team-Advanced) | **Advanced Blue Team** — Threat Modelling, Deception, Architecture |
+| [STAGE-15](./STAGE-15_Development-Automation) | **Development & Automation** — Python, Bash, PowerShell, Tool Dev |
+| [STAGE-16](./STAGE-16_Advanced-Topics) | **Advanced Topics** — Reverse Engineering, Exploit Dev, Mobile, IoT |
+| [STAGE-17](./STAGE-17_Career-Certifications) | **Career & Certifications** — OSCP, GICSP, CISSP, Job Strategy |
+| [STAGE-18](./STAGE-18_Platforms-Resources) | **Platforms & Resources** — TryHackMe, HTB, CTF, Communities |
 
 > ⭐ **Stage 12 is the primary specialisation target.** OT/ICS security sits at the intersection of cybersecurity and physical engineering — covering power grids, industrial control systems, SCADA, building automation, and critical infrastructure. Every stage before it builds the foundation that makes Stage 12 not just understandable but immediately applicable.
 
@@ -101,14 +101,9 @@ Minimum Lab Setup:
 
 ## Current Progress
 
-```
-STAGE-00_Foundations
-├── ✅ 01_hardware-fundamentals.md       (77 KB)
-├── ✅ 02_os-fundamentals.md             (62 KB)
-├── ✅ 03_windows-fundamentals.md        (80 KB)
-├── ⬜ 04_linux-fundamentals.md
-└── ⬜ 05_programming-fundamentals.md
-```
+This repository is actively maintained.  
+Progress is reflected directly in the repository folders.  
+Check the commit history for the latest updates.
 
 ---
 
