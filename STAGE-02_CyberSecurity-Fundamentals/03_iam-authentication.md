@@ -1,5 +1,4 @@
-# Module 2.3 — Kimlik Doğrulama ve Erişim Yönetimi (IAM)
-### Bytewall Academy | Cybersecurity × OT/ICS Security Roadmap
+# Identity Authentication and Access Management (IAM)
 
 ---
 
