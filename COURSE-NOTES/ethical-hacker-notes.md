@@ -3,6 +3,20 @@
 > A comprehensive, industry-grade knowledge base built from the Cisco Networking Academy "Ethical Hacker" curriculum, expanded with professional terminology, frameworks, tools, cloud concepts, career roles, and real-world practices used across the cybersecurity industry. This document is structured module-by-module, mirroring the official course outline, but goes significantly beyond it to provide the depth required for mid/senior-level practitioner readiness.
 
 ---
+## Table of Contents
+
+* [Module 1: Introduction to Ethical Hacking and Penetration Testing](#module-1-introduction-to-ethical-hacking-and-penetration-testing)
+* [Module 2: Planning and Scoping a Penetration Testing Assessment](#module-2-planning-and-scoping-a-penetration-testing-assessment)
+* [Module 3: Information Gathering and Vulnerability Scanning](#module-3-information-gathering-and-vulnerability-scanning)
+* [Module 4: Social Engineering Attacks](#module-4-social-engineering-attacks)
+* [Module 5: Exploiting Wired and Wireless Networks](#module-5-exploiting-wired-and-wireless-networks)
+* [Module 6: Exploiting Application-Based Vulnerabilities](#module-6-exploiting-application-based-vulnerabilities)
+* [Module 7: Cloud, Mobile, and IoT Security](#module-7-cloud-mobile-and-iot-security)
+* [Module 8: Performing Post-Exploitation Techniques](#module-8-performing-post-exploitation-techniques)
+* [Module 9: Reporting and Communication](#module-9-reporting-and-communication)
+* [Module 10: Tools and Code Analysis](#module-10-tools-and-code-analysis)
+
+---
 
 # MODULE 1: Introduction to Ethical Hacking and Penetration Testing
 
