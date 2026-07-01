@@ -2494,3 +2494,3859 @@ A vulnerability that is unknown to the software vendor and for which no patch ex
 *— End of Module 2: Planning and Scoping a Penetration Testing Assessment —*
 
 ---
+
+# Module 3: Information Gathering and Vulnerability Scanning
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**  
+> *Professional Reference Guide — GitHub Edition*  
+> *Covers: Passive Reconnaissance · OSINT · DNS · Social Media · Cryptographic Analysis · Shodan*
+
+---
+
+## Table of Contents
+
+- [3.0 Introduction](#30-introduction)
+- [3.1 Performing Passive Reconnaissance](#31-performing-passive-reconnaissance)
+  - [3.1.1 Overview](#311-overview)
+  - [3.1.2 Active Reconnaissance vs. Passive Reconnaissance](#312-active-reconnaissance-vs-passive-reconnaissance)
+  - [3.1.3 The OSINT Methodology — How Professionals Think](#313-the-osint-methodology--how-professionals-think)
+  - [3.1.4 OSINT Tools — The Complete Professional Arsenal](#314-osint-tools--the-complete-professional-arsenal)
+  - [3.1.5 DNS Lookups — Deep Dive](#315-dns-lookups--deep-dive)
+  - [3.1.6 DNS Reconnaissance — Advanced Techniques](#316-dns-reconnaissance--advanced-techniques)
+  - [3.1.7 Identification of Technical and Administrative Contacts](#317-identification-of-technical-and-administrative-contacts)
+  - [3.1.8 WHOIS Intelligence — Extracting Maximum Value](#318-whois-intelligence--extracting-maximum-value)
+  - [3.1.9 DNS Lookups — Lab-Level Practical Reference](#319-dns-lookups--lab-level-practical-reference)
+  - [3.1.10 Cloud vs. Self-Hosted Applications and Related Subdomains](#3110-cloud-vs-self-hosted-applications-and-related-subdomains)
+  - [3.1.11 Social Media Scraping](#3111-social-media-scraping)
+  - [3.1.12 Employee Intelligence Gathering](#3112-employee-intelligence-gathering)
+  - [3.1.13 Cryptographic Flaws](#3113-cryptographic-flaws)
+  - [3.1.14 Finding Information from SSL Certificates](#3114-finding-information-from-ssl-certificates)
+  - [3.1.15 Company Reputation and Security Posture](#3115-company-reputation-and-security-posture)
+  - [3.1.16 File Metadata](#3116-file-metadata)
+  - [3.1.17 Web Archiving, Caching, and Public Code Repositories](#3117-web-archiving-caching-and-public-code-repositories)
+  - [3.1.18 Finding Out About the Organization — Aggregation Techniques](#3118-finding-out-about-the-organization--aggregation-techniques)
+  - [3.1.19 Advanced Searches — Google Dorking and Beyond](#3119-advanced-searches--google-dorking-and-beyond)
+  - [3.1.20 Open-Source Intelligence (OSINT) Gathering — Frameworks and Automation](#3120-open-source-intelligence-osint-gathering--frameworks-and-automation)
+  - [3.1.21 Shodan — The Search Engine for Everything Connected](#3121-shodan--the-search-engine-for-everything-connected)
+  - [3.1.22 Breach Data Intelligence — Leaked Credentials and Exposure Monitoring](#3122-breach-data-intelligence--leaked-credentials-and-exposure-monitoring)
+
+---
+
+## 3.0 Introduction
+
+### Module Overview: Information Gathering and Vulnerability Scanning
+
+**Module Objective:** Perform information gathering and vulnerability scanning activities at a professional, senior-level standard.
+
+Before a single exploit is launched, before a single payload is crafted, every professional penetration tester invests significant time in a discipline that separates competent practitioners from exceptional ones: **information gathering**. The reconnaissance phase is the intelligence foundation upon which the entire attack strategy is built. The quality of your reconnaissance directly determines the quality of your attack.
+
+#### Why This Module is the Most Critical in the Entire Penetration Testing Process
+
+Consider the following reality: a skilled penetration tester with 10 hours of thorough reconnaissance and 2 hours of exploitation will consistently outperform a tester with 1 hour of reconnaissance and 11 hours of exploitation. This is because:
+
+1. **Attack surface knowledge** — You cannot attack what you do not know exists
+2. **Targeted exploitation** — Knowing specific versions, technologies, and configurations enables precise attack selection
+3. **Stealth** — Passive reconnaissance leaves zero traces in target logs
+4. **Social engineering precision** — Detailed personnel and organizational intelligence enables highly credible pretexts
+5. **Scope awareness** — Thorough OSINT reveals assets the client may not even know they have
+
+#### The Reconnaissance-Attack Continuum
+
+```
+PASSIVE RECON → ACTIVE RECON → SCANNING → ENUMERATION → EXPLOITATION → POST-EXPLOITATION
+     (This Module Section 3.1)  (Section 3.2)  (Sections 3.3/3.4)
+```
+
+**Passive Reconnaissance** is the first and most foundational phase. It involves gathering intelligence about a target using only publicly available information sources, without making any direct contact with the target's systems. The target never knows you are collecting this information.
+
+**Active Reconnaissance** follows and involves directly interacting with target systems — sending probes, queries, and packets — to enumerate live systems, open ports, and services.
+
+**Vulnerability Scanning** then uses the intelligence gathered in both recon phases to identify specific security weaknesses in enumerated systems.
+
+---
+
+### Module Topics at a Glance
+
+| Section | Topic | Objective |
+|---------|-------|-----------|
+| 3.1 | Performing Passive Reconnaissance | Collect intelligence without touching target systems |
+| 3.2 | Performing Active Reconnaissance | Directly probe target systems to enumerate infrastructure |
+| 3.3 | Understanding the Art of Performing Vulnerability Scans | Conduct structured, methodical vulnerability scanning |
+| 3.4 | Understanding How to Analyze Vulnerability Scan Results | Interpret, prioritize, and act on scan findings |
+
+---
+
+## 3.1 Performing Passive Reconnaissance
+
+### 3.1.1 Overview
+
+Passive reconnaissance is the discipline of collecting as much intelligence as possible about a target organization using only **publicly available information** — information that exists in the open and can be accessed without the target's knowledge.
+
+The term "passive" is critical: during this phase, you generate **zero network traffic to the target**. No pings. No port scans. No HTTP requests to the target's web server. Every data point is gathered from third-party sources, public databases, archived data, and open web resources.
+
+#### Why Passive Reconnaissance Matters at the Senior Level
+
+Junior penetration testers often treat reconnaissance as a checklist to complete before getting to the "real work" of exploitation. Senior penetration testers understand that reconnaissance *is* the work. The penetration testing firm Offensive Security, authors of Kali Linux and creators of the OSCP certification, teach that a penetration tester should spend at least **30-40% of total engagement time** on reconnaissance.
+
+The professional reasons:
+
+**1. Legal protection:** Passive recon is never illegal. Accessing public information carries zero criminal risk, while premature active scanning of the wrong IP address is a CFAA violation.
+
+**2. Attack precision:** Knowing that a target runs Apache Tomcat 9.0.41 on a specific IP enables you to immediately cross-reference known CVEs. Without this knowledge, you are scanning blindly.
+
+**3. Organizational intelligence:** Passive recon reveals the human attack surface — executives, IT staff, vendors, technologies in use — enabling social engineering attacks that technical controls cannot stop.
+
+**4. Shadow IT discovery:** Passive recon routinely reveals subdomains, applications, and cloud assets that the client's IT team does not know exist. These unmanaged assets are frequently the easiest entry points.
+
+**5. Timeline intelligence:** Web archives reveal what technologies a target used in the past, sometimes exposing legacy systems still in use.
+
+---
+
+### 3.1.2 Active Reconnaissance vs. Passive Reconnaissance
+
+Understanding the precise boundary between passive and active reconnaissance is both a technical and a legal necessity.
+
+#### Passive Reconnaissance — Defined
+
+Passive reconnaissance collects information from sources that are:
+- Publicly indexed and accessible to anyone
+- Third-party resources (not the target's own infrastructure)
+- Archived or cached versions of target information
+- Volunteered information (press releases, job listings, social media)
+
+**The defining test:** "Did my action generate any network traffic or log entries on the target's systems?" If no — it is passive.
+
+**Examples of passive reconnaissance activities:**
+- Looking up DNS records using a third-party resolver
+- Searching LinkedIn for employees of the target organization
+- Examining cached versions of the target's website via Google Cache or Wayback Machine
+- Reading the target's press releases and annual reports
+- Searching Shodan for the target's IP ranges
+- Examining SSL certificate transparency logs
+- Running WHOIS lookups through a third-party service
+- Searching GitHub for code related to the target organization
+- Examining job listings to identify technologies in use
+- Analyzing file metadata from documents published on the target's website
+
+#### Active Reconnaissance — Defined
+
+Active reconnaissance involves directly interacting with the target's systems and infrastructure.
+
+**The defining test:** "Does my action generate network traffic that the target could log, detect, or block?" If yes — it is active.
+
+**Examples of active reconnaissance activities:**
+- Port scanning the target's IP addresses (nmap)
+- Banner grabbing from the target's servers
+- Sending HTTP requests to the target's web application
+- Tracerouting to the target's infrastructure
+- Performing DNS zone transfer attempts against the target's DNS servers
+- Crawling the target's website
+- Sending ping probes to the target's IP ranges
+
+#### The Legal Distinction
+
+This distinction has direct legal implications:
+
+| Aspect | Passive Recon | Active Recon |
+|--------|--------------|--------------|
+| **Legal risk** | None — accessing public info | Potential CFAA violation if unauthorized |
+| **Detection risk** | Zero — no target interaction | High — generates logs on target systems |
+| **Pre-authorization** | Can be performed before authorization is signed | Must only be performed after authorization |
+| **Log evidence** | No traces on target | Target's IDS/IPS/firewall logs activity |
+| **Timing** | Can begin day 1 of engagement | Begins only after ROE is signed |
+
+**Critical professional practice:** Many penetration testers begin passive reconnaissance immediately after being engaged — even before the contract is finalized — because it generates zero legal risk and the intelligence gathered informs the scoping conversation with the client.
+
+#### The Passive-Active Spectrum
+
+Some activities exist in a gray zone:
+
+| Activity | Classification | Why |
+|----------|---------------|-----|
+| Google search for target domain | Passive | No target interaction |
+| Accessing target's public website | Active | Generates server logs on target |
+| WHOIS via third-party service | Passive | Third party handles the lookup |
+| DNS query via your own resolver | Active | Your resolver queries target's authoritative DNS |
+| DNS query via a third-party tool | Passive | Third party generates the query |
+| Shodan search for target IPs | Passive | Shodan already scanned; you view results |
+| Running nmap against target IP | Active | Direct packets to target |
+| Certificate Transparency logs | Passive | Accessing third-party CT log databases |
+
+Understanding this spectrum allows you to plan exactly what can be done before authorization and what requires a signed contract.
+
+---
+
+### 3.1.3 The OSINT Methodology — How Professionals Think
+
+OSINT is not random searching. Professional intelligence analysts follow a structured methodology derived from military and intelligence community practices.
+
+#### The Intelligence Cycle
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   INTELLIGENCE CYCLE                     │
+│                                                          │
+│  1. PLANNING & DIRECTION                                 │
+│     Define intelligence requirements                     │
+│     What do we need to know? Why?                       │
+│          ↓                                               │
+│  2. COLLECTION                                           │
+│     Gather raw data from multiple sources               │
+│          ↓                                               │
+│  3. PROCESSING                                           │
+│     Convert raw data into usable format                 │
+│          ↓                                               │
+│  4. ANALYSIS & PRODUCTION                               │
+│     Evaluate, correlate, and interpret data             │
+│          ↓                                               │
+│  5. DISSEMINATION                                        │
+│     Deliver intelligence to decision makers             │
+│          ↓                                               │
+│  6. FEEDBACK                                            │
+│     Refine requirements based on results                │
+│          └────────────────────────────────────┘         │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### OSINT Intelligence Requirements for Penetration Testing
+
+At the start of passive recon, define what you need to know:
+
+**Infrastructure Intelligence:**
+- What IP address ranges does the organization own?
+- What domain names and subdomains does the organization operate?
+- What hosting providers and cloud services does the organization use?
+- What technologies (web servers, frameworks, databases) are in use?
+- What externally accessible services are running?
+
+**Organizational Intelligence:**
+- Who are the key technical personnel (IT staff, developers, security team)?
+- What does the organizational chart look like?
+- What vendors and third-party services does the organization use?
+- What business units exist and what are their functions?
+
+**Human Intelligence (HUMINT):**
+- What are the email address formats used by the organization?
+- What information do employees publicly share about their work and technologies?
+- What skills do employees list (revealing technologies in use)?
+- What security awareness level do employees demonstrate?
+
+**Reputational Intelligence:**
+- Has the organization suffered previous data breaches?
+- What is the organization's public security posture?
+- Are there leaked credentials in breach databases?
+- What does the organization's dark web footprint look like?
+
+**Historical Intelligence:**
+- What did the organization's infrastructure look like in the past?
+- What technologies have they used and potentially still use?
+- What security incidents have been publicly reported?
+
+#### The Pivot Model
+
+Professional OSINT analysts use a technique called **pivoting** — using one piece of intelligence to unlock additional intelligence. Every data point discovered can be used to find more:
+
+```
+Organization Name
+    ├── Domain Name
+    │       ├── IP Addresses (DNS A records)
+    │       │       ├── ASN / IP Range
+    │       │       │       └── Other IPs in the range → More targets
+    │       │       └── Geolocation → Data center / hosting provider
+    │       ├── Subdomains
+    │       │       └── Each subdomain → New IP → New services
+    │       ├── Mail Servers (MX records)
+    │       │       └── Email provider → Office 365? G Suite?
+    │       └── SSL Certificates
+    │               └── Subject Alternative Names → Hidden subdomains
+    ├── Executive Names (from LinkedIn)
+    │       ├── Email address (using email format)
+    │       │       └── Breach data → Leaked passwords → Credential stuffing
+    │       └── Social media → Technology disclosures
+    └── Job Listings
+            └── Technology stack ("requires experience with AWS, Kubernetes, HashiCorp Vault")
+```
+
+This pivot model means that starting with only an organization's name, a skilled analyst can map out the entire attack surface before touching a single target system.
+
+---
+
+### 3.1.4 OSINT Tools — The Complete Professional Arsenal
+
+#### OSINT Framework
+
+**Website:** https://osintframework.com/  
+**Type:** Reference/Navigation Tool  
+**Cost:** Free
+
+OSINT Framework is the foundational resource for any OSINT practitioner. Created by Justin Nordine, it is an interactive, hierarchically organized map of hundreds of OSINT tools and techniques, organized by the type of data you have (starting point) and what you want to find.
+
+**Structure of OSINT Framework:**
+
+The framework is organized as a tree starting from the type of indicator you possess:
+
+```
+OSINT Framework Root
+├── Username
+│   ├── Username Search Engines (Sherlock, WhatsMyName)
+│   ├── Social Networks
+│   └── Forums / Communities
+├── Email Address
+│   ├── Email Reputation
+│   ├── Breach Data
+│   └── Associated Accounts
+├── Domain Name
+│   ├── WHOIS Records
+│   ├── DNS Records
+│   ├── Subdomains
+│   └── Website Analysis
+├── IP Address
+│   ├── Geolocation
+│   ├── Reverse DNS
+│   └── Network Information
+├── Image / Photo
+│   ├── Reverse Image Search
+│   └── Facial Recognition
+├── Phone Number
+│   ├── Carrier Lookup
+│   └── Social Media Linked
+└── ... (hundreds more branches)
+```
+
+**How professionals use OSINT Framework:**
+
+1. Start with what you have (e.g., an email address from a job listing)
+2. Navigate to that branch in the framework
+3. Identify which tools are most appropriate for your objective
+4. Execute the tools in sequence, pivoting from each result
+
+**Notation in OSINT Framework:**
+
+- **(T)** — Tool (requires installation or technical setup)
+- **(D)** — Dynamic (content changes based on input)
+- **(R)** — Requires registration/account
+- **(M)** — Malware warning (use with caution)
+
+---
+
+#### OSINT Combine
+
+**Website:** https://www.osintcombine.com/  
+**Type:** Tool collection and automation platform  
+**Cost:** Partially free; premium features available
+
+OSINT Combine is a professional-grade platform developed by Australian OSINT specialists containing tools designed for specific, high-value OSINT tasks. It differentiates itself by focusing on automation and efficiency — reducing the manual effort of common OSINT workflows.
+
+**Key tools available on OSINT Combine:**
+
+**Image Metadata Viewer:** Extracts and displays EXIF metadata from images (GPS coordinates, camera model, timestamps) directly in the browser without downloading.
+
+**Social Media Search:** Cross-platform username and content searches designed to overcome the limitations of native platform search interfaces.
+
+**Map Searching Tools:** Specialized tools for geolocation analysis and map-based OSINT (verifying locations from photos, tracking movements from social media content).
+
+**Domain Investigation Tools:** DNS history, WHOIS lookups, and subdomain enumeration integrated into a unified workflow.
+
+**Bulk Data Processing:** Tools for processing large datasets (e.g., processing multiple usernames or email addresses simultaneously).
+
+**Professional Application:**  
+OSINT Combine is particularly valuable for:
+- Social media investigations (identifying accounts across platforms)
+- Geolocation of images shared by employees (potentially revealing office locations, travel patterns, physical security details)
+- Bulk processing when handling large employee lists from LinkedIn
+
+---
+
+#### SMART — Start.me Aggregated Resource Tool
+
+**Website:** https://smart.myosint.training/  
+**Type:** OSINT bookmark aggregator and search interface  
+**Cost:** Free  
+**Created by:** My OSINT Training (MOT) Team
+
+SMART solves a specific problem in OSINT practice: the fragmentation of resources. Thousands of practitioners maintain OSINT resource lists on the start.me bookmarking platform. SMART indexes all of these public lists and provides a unified search interface across them.
+
+**What makes SMART valuable:**
+
+When you are looking for tools related to a specific intelligence requirement — say, "maritime vessel tracking" or "corporate registration databases for Brazil" — SMART quickly surfaces specialized resources that would otherwise require extensive searching.
+
+**Use cases:**
+- Finding country-specific OSINT resources (corporate registries, electoral rolls, court records)
+- Discovering niche tools for specific data types
+- Building a comprehensive resource list for a specific engagement type
+
+---
+
+#### SpiderFoot
+
+**Website:** https://www.spiderfoot.net/  
+**GitHub:** https://github.com/smicallef/spiderfoot  
+**Type:** Automated OSINT reconnaissance platform  
+**Cost:** Open-source (SpiderFoot HX cloud version has costs)  
+**Installation:** `pip3 install spiderfoot` or from GitHub
+
+SpiderFoot is one of the most powerful automated OSINT tools in existence. It takes a single target indicator (IP address, domain name, email address, person name, or ASN) and automatically queries over **200 data sources** to build a comprehensive intelligence profile.
+
+**How SpiderFoot Works:**
+
+SpiderFoot operates on a modular architecture. Each module queries a specific data source. When one module returns data, it triggers other modules that can use that data as input — creating an automated pivot chain.
+
+```
+Input: targetcompany.com
+    ↓
+DNS Module → IP addresses: 203.0.113.50, 203.0.113.51
+    ↓
+IP Whois Module → ASN: AS12345, Organization: Target Company Inc.
+    ↓
+Netblock Module → Full IP range: 203.0.113.0/24
+    ↓
+Port Scanner Module → Open ports on all IPs in range
+    ↓
+Banner Grab Module → Service banners and versions
+    ↓
+Certificate Module → SSL certs → Subject Alternative Names → New subdomains
+    ↓
+Shodan Module → Shodan data for each IP
+    ↓
+Breach Module → Check emails against HaveIBeenPwned
+    ... (200+ modules)
+```
+
+**SpiderFoot Modules of Highest Value for Penetration Testers:**
+
+| Module | Data Source | Intelligence Gathered |
+|--------|-------------|----------------------|
+| `sfp_dnsresolve` | DNS | IP addresses for domains |
+| `sfp_ssl` | SSL certificate analysis | Subject alternative names, cert history |
+| `sfp_shodan` | Shodan API | Open ports, services, banners |
+| `sfp_whois` | WHOIS | Registrant info, nameservers |
+| `sfp_hunter` | Hunter.io | Email addresses from domain |
+| `sfp_hibp` | HaveIBeenPwned | Breach exposure of emails |
+| `sfp_linkedin` | LinkedIn | Employee names and roles |
+| `sfp_github` | GitHub | Source code, credentials, configs |
+| `sfp_pastebin` | Pastebin | Leaked data mentioning target |
+| `sfp_virustotal` | VirusTotal | URL/IP reputation, malware association |
+| `sfp_threatcrowd` | ThreatCrowd | Threat intelligence correlation |
+| `sfp_googlesearch` | Google | Indexed pages, exposed files |
+
+**Running SpiderFoot:**
+
+```bash
+# Install
+pip3 install spiderfoot
+
+# Launch web interface
+spiderfoot -l 127.0.0.1:5001
+
+# Command line scan
+spiderfoot -s targetcompany.com -t INTERNET_NAME -o json -q
+
+# Scan with specific modules only
+spiderfoot -s targetcompany.com -m sfp_dns,sfp_ssl,sfp_shodan -o json
+
+# Full passive scan (no active modules)
+spiderfoot -s targetcompany.com --type passive -o json
+```
+
+**SpiderFoot vs. Manual OSINT:**
+
+| Approach | Time for Full Domain Recon | Breadth |
+|----------|---------------------------|---------|
+| Manual OSINT | 4-8 hours | Depends on analyst skill |
+| SpiderFoot automated | 15-45 minutes | 200+ sources automatically |
+
+SpiderFoot does not replace human analysis — it accelerates data collection so the analyst can focus on interpretation and pivoting.
+
+---
+
+#### Recon-ng
+
+**GitHub:** https://github.com/lanmaster53/recon-ng  
+**Documentation:** https://github.com/lanmaster53/recon-ng/wiki  
+**Type:** Modular web reconnaissance framework  
+**Cost:** Free / Open-source  
+**Platform:** Linux (included in Kali Linux)  
+**Created by:** Tim Tomes (LaNMaSteR53)
+
+Recon-ng is a full-featured web reconnaissance framework written in Python. Its design is deliberately modeled after Metasploit — experienced penetration testers who know Metasploit will find recon-ng immediately familiar. It provides a powerful, module-based CLI for conducting systematic OSINT campaigns.
+
+**Why recon-ng is a professional standard:**
+
+- **Database backend:** All results are stored in a local SQLite database, enabling complex queries, cross-referencing, and persistent storage across sessions
+- **Workspace isolation:** Create separate workspaces for each client engagement, keeping data cleanly separated
+- **Module ecosystem:** Hundreds of modules covering every aspect of OSINT
+- **API key management:** Centralized management of API keys for services like Shodan, VirusTotal, Hunter.io
+- **Reporting:** Built-in report generation from collected data
+- **Automation:** Scripting capability for repeatable reconnaissance workflows
+
+**recon-ng Core Concepts:**
+
+**Workspaces:** Isolated databases for each engagement
+```
+[recon-ng][default] > workspaces create client_target_co
+[recon-ng][client_target_co] > 
+```
+
+**Modules:** The intelligence-gathering engines
+```
+[recon-ng][client_target_co] > modules search domains
+[*] Searching for 'domains'...
+
+  Discovery
+  ---------
+    discovery/info_disclosure/interesting_files
+    
+  Recon
+  -----
+    recon/domains-contacts/hunter_io
+    recon/domains-credentials/pwnedlist_domain_credentials
+    recon/domains-domains/brute_suffix
+    recon/domains-hosts/bing_domain_web
+    recon/domains-hosts/brute_hosts
+    recon/domains-hosts/certificate_transparency
+    recon/domains-hosts/google_site_web
+    recon/domains-hosts/netcraft
+    recon/domains-hosts/shodan_hostname
+    recon/domains-hosts/ssl_san
+    recon/domains-vulnerabilities/punkspider
+    recon/domains-vulnerabilities/xssed
+    recon/domains-vulnerabilities/xssposed
+```
+
+**The recon-ng Module Naming Convention:**
+
+```
+category/subcategory/source
+
+recon/domains-hosts/certificate_transparency
+ │         │              │
+ │         │              └── Data source used
+ │         └── What you HAVE → What you GET (domains → hosts)
+ └── Module category
+```
+
+**Common recon-ng Workflow:**
+
+```bash
+# Launch recon-ng
+recon-ng
+
+# Create workspace for engagement
+workspaces create targetco_engagement_2024
+
+# Add seed domain
+db insert domains targetco.com
+
+# Find subdomains via certificate transparency
+modules load recon/domains-hosts/certificate_transparency
+run
+
+# Find subdomains via Bing
+modules load recon/domains-hosts/bing_domain_web
+run
+
+# Resolve all discovered hosts to IPs
+modules load recon/hosts-hosts/resolve
+run
+
+# Find email addresses for domain
+modules load recon/domains-contacts/hunter_io
+options set SOURCE targetco.com
+run
+
+# Check emails against breach data
+modules load recon/contacts-credentials/hibp_breach
+run
+
+# Generate HTML report
+modules load reporting/html
+options set FILENAME /tmp/targetco_recon_report.html
+run
+```
+
+**High-Value recon-ng Modules:**
+
+| Module | Input | Output |
+|--------|-------|--------|
+| `recon/domains-hosts/certificate_transparency` | Domain | Subdomains from CT logs |
+| `recon/domains-hosts/shodan_hostname` | Domain | IPs and ports from Shodan |
+| `recon/domains-hosts/brute_hosts` | Domain | Subdomain brute force |
+| `recon/domains-contacts/hunter_io` | Domain | Email addresses |
+| `recon/contacts-credentials/hibp_breach` | Email | Breach data |
+| `recon/hosts-ports/shodan_ip` | IP Address | Open ports from Shodan |
+| `recon/netblocks-companies/whois_orgs` | Netblock | Organization info |
+| `recon/companies-multi/whois_miner` | Company | All WHOIS data |
+| `recon/profiles-profiles/linkedin_auth` | LinkedIn URL | Profile details |
+
+**recon-ng API Key Setup:**
+
+recon-ng requires API keys for many of its most powerful modules:
+```bash
+keys add shodan_api [YOUR_KEY]
+keys add hunter_api [YOUR_KEY]
+keys add virustotal_api [YOUR_KEY]
+keys add censys_id [YOUR_ID]
+keys add censys_secret [YOUR_SECRET]
+```
+
+---
+
+#### Maltego
+
+**Website:** https://www.maltego.com/  
+**Type:** Visual intelligence and link analysis platform  
+**Cost:** Community (free, limited), Pro ($999/year), Enterprise  
+**Platform:** Cross-platform (Windows, macOS, Linux)
+
+Maltego is the industry-standard tool for visual OSINT analysis and link analysis. Unlike CLI tools, Maltego presents intelligence graphically — as a network graph showing relationships between entities (people, organizations, domains, IPs, emails, social profiles).
+
+**Why Maltego is used at the enterprise level:**
+
+- **Visual relationship mapping:** Instantly reveals connections between entities that would take hours to identify in text-based tools
+- **Transform-based automation:** "Transforms" are automated queries that expand the graph with new intelligence
+- **Maltego Transform Hub:** Marketplace of transforms from commercial data providers (Shodan, Have I Been Pwned, VirusTotal, etc.)
+- **Collaboration:** Teams can share investigation graphs
+- **Evidence preservation:** The graph is a defensible record of the investigation methodology
+
+**Core Maltego Entity Types:**
+
+```
+Person, EmailAddress, PhoneNumber, Organization
+Domain, URL, Website, DNSName, NSRecord, MXRecord
+IPv4Address, Netblock, ASNumber
+Social media profiles (Twitter, LinkedIn, Facebook)
+File, Document, Phrase
+```
+
+**Professional Maltego Workflow:**
+
+1. Add seed entity (e.g., `targetco.com` as a Domain entity)
+2. Run DNS transforms → discovers A, MX, NS records + IP addresses
+3. Run WHOIS transforms → discovers registrant info
+4. Run SSL transforms → discovers Subject Alternative Names (new subdomains)
+5. Run email transforms → discovers email addresses (via Hunter.io, etc.)
+6. Run breach transforms → checks emails against HaveIBeenPwned
+7. Run social media transforms → finds LinkedIn/Twitter profiles
+8. Run Shodan transforms → enriches IP data with port/service information
+
+The result is a comprehensive, visual map of the target's entire digital presence and the relationships between all discovered entities.
+
+---
+
+#### theHarvester
+
+**GitHub:** https://github.com/laramies/theHarvester  
+**Type:** Email and subdomain harvester  
+**Cost:** Free / Open-source  
+**Platform:** Linux (included in Kali Linux)
+
+theHarvester is one of the oldest and most reliable passive reconnaissance tools. Its specific focus is gathering email addresses, subdomains, and employee names from multiple public data sources.
+
+**Data Sources Supported:**
+
+| Source | What it Finds |
+|--------|--------------|
+| Google | Emails, subdomains, hosts |
+| Bing | Emails, subdomains, hosts |
+| DuckDuckGo | Emails, hosts |
+| LinkedIn | Employee names |
+| Twitter | Usernames, emails |
+| Shodan | Hosts, open ports |
+| CertSpotter | Subdomains via CT logs |
+| DNSdumpster | DNS info, subdomains |
+| Netcraft | Subdomains |
+| VirusTotal | Subdomains |
+| Hunter.io | Emails |
+| Intelx | Emails, hosts (requires API key) |
+
+**Usage:**
+
+```bash
+# Basic domain email and subdomain harvest
+theHarvester -d targetco.com -b all
+
+# Specific data sources
+theHarvester -d targetco.com -b google,linkedin,shodan
+
+# Limit results and save to file
+theHarvester -d targetco.com -b all -l 500 -f /tmp/harvest_results.html
+
+# Include subdomains in search
+theHarvester -d targetco.com -b all -s
+
+# Specify virtual host verification
+theHarvester -d targetco.com -b all -v
+```
+
+**What theHarvester Discovers:**
+
+```
+[*] Emails found: 23
+--------------------------------------------------
+j.smith@targetco.com
+a.johnson@targetco.com
+m.williams@targetco.com
+security@targetco.com
+admin@targetco.com
+
+[*] Hosts found: 47
+--------------------------------------------------
+mail.targetco.com:203.0.113.10
+vpn.targetco.com:203.0.113.15
+dev.targetco.com:10.0.1.100  ← Shadow IT discovery
+staging.targetco.com:203.0.113.20  ← Pre-production environment
+```
+
+The discovery of `dev.targetco.com` and `staging.targetco.com` — development and staging servers — is one of the most valuable passive recon findings. These environments frequently have weaker security controls than production systems.
+
+---
+
+#### Sherlock
+
+**GitHub:** https://github.com/sherlock-project/sherlock  
+**Type:** Username cross-platform search tool  
+**Cost:** Free / Open-source
+
+Sherlock searches for a specific username across **300+ social media platforms and websites** simultaneously. This is invaluable for:
+
+- Finding all public profiles associated with an employee's known username
+- Identifying personal accounts that may disclose sensitive information
+- Building a complete social profile of a target individual
+
+```bash
+# Install
+pip3 install sherlock-project
+
+# Search for username
+sherlock johndoe_security
+
+# Multiple usernames
+sherlock johndoe johndoe_security j.doe
+
+# Specify output file
+sherlock johndoe --output /tmp/johndoe_results.txt
+```
+
+---
+
+#### hacker.org
+
+**Website:** https://hacker.org/  
+**Type:** Cybersecurity skill development platform / CTF-style challenges  
+**Cost:** Free (registration required for challenges)
+
+hacker.org is a training and practice platform designed for developing offensive security skills through hands-on challenges. It is categorized as a skill development resource rather than an OSINT data source, but it is relevant to the information gathering module because it develops the analytical and technical thinking required for reconnaissance.
+
+**What hacker.org offers:**
+
+- **Programming challenges:** Logic and algorithm problems requiring code solutions
+- **Cryptography challenges:** Breaking and implementing cryptographic systems
+- **Web security challenges:** Finding and exploiting web vulnerabilities in safe, legal environments
+- **Network analysis challenges:** Analyzing packet captures and network protocols
+- **Steganography challenges:** Finding hidden data in images and files
+- **CTF-style progressions:** Increasing difficulty levels that build systematically on each other
+
+**How it builds reconnaissance skills:**
+
+Many reconnaissance techniques require exactly the analytical skills developed on hacker.org:
+- Identifying hidden information in files and images (steganography → file metadata analysis)
+- Understanding cryptographic weaknesses (crypto challenges → SSL/TLS vulnerability identification)
+- Finding information in unexpected places (web challenges → advanced Google dorking)
+- Scripting and automation (programming challenges → automated OSINT tool development)
+
+**Professional positioning:** hacker.org and similar platforms (Hack The Box, TryHackMe, PicoCTF) are increasingly referenced in job interviews as evidence of hands-on skill development.
+
+---
+
+### 3.1.5 DNS Lookups — Deep Dive
+
+The Domain Name System (DNS) is one of the most information-rich sources available during passive reconnaissance. DNS records publicly document an organization's infrastructure in ways most organizations do not fully appreciate.
+
+#### DNS Fundamentals — What Every Senior Penetration Tester Must Know
+
+DNS translates human-readable domain names into machine-readable IP addresses. But its function extends far beyond simple name resolution — it is a distributed database containing multiple record types that reveal extensive infrastructure intelligence.
+
+**DNS Architecture:**
+
+```
+Client Query: "What is the IP of www.targetco.com?"
+
+Resolver (Recursive DNS Server)
+    ↓ (queries if not cached)
+Root Name Server → "Ask .com TLD servers"
+    ↓
+.com TLD Server → "Ask targetco.com's authoritative name servers"
+    ↓
+Authoritative NS for targetco.com → "203.0.113.50"
+    ↓
+Answer returned to client: 203.0.113.50
+```
+
+**Intelligence value at each layer:**
+
+- **Root server queries:** Reveal what TLD the organization uses (.com, .gov, .mil, .co.uk — indicates jurisdiction)
+- **Authoritative name servers:** Reveal DNS hosting provider (AWS Route 53, Cloudflare, GoDaddy — intelligence about infrastructure providers)
+- **DNS record types:** Each type reveals specific infrastructure details
+
+#### Complete DNS Record Type Reference
+
+**A Record (Address Record)**
+
+Maps a hostname to an IPv4 address. The most fundamental DNS record.
+
+```bash
+# Query A record
+dig targetco.com A
+nslookup targetco.com
+
+# Response
+targetco.com.    300    IN    A    203.0.113.50
+```
+
+**Intelligence value:** 
+- The IP address enables further intelligence gathering (Shodan, WHOIS for the IP, geolocation)
+- The TTL (Time To Live, in seconds — here: 300 seconds = 5 minutes) reveals caching behavior; very low TTLs suggest load balancing or CDN use; very high TTLs suggest static infrastructure
+- Multiple A records for the same hostname indicate load balancing or CDN
+
+**AAAA Record (IPv6 Address Record)**
+
+Maps a hostname to an IPv6 address. Organizations increasingly deploy IPv6, and IPv6 addresses are often less well-monitored than IPv4.
+
+```bash
+dig targetco.com AAAA
+```
+
+**Intelligence value:**
+- IPv6 often reveals direct IP addresses even when IPv4 is behind a CDN (like Cloudflare)
+- IPv6 address blocks often reveal the organization's ISP or hosting provider
+- Organizations frequently apply less rigorous security controls to IPv6 paths
+
+**MX Record (Mail Exchanger Record)**
+
+Specifies the mail servers responsible for accepting email for a domain.
+
+```bash
+dig targetco.com MX
+
+# Response
+targetco.com.    3600    IN    MX    10    mail1.targetco.com.
+targetco.com.    3600    IN    MX    20    mail2.targetco.com.
+targetco.com.    3600    IN    MX    30    aspmx.l.google.com.   ← G Suite!
+```
+
+**Intelligence value:**
+- Reveals email provider (Google Workspace, Microsoft 365, self-hosted Exchange)
+- **Google Workspace indicators:** `aspmx.l.google.com`, `alt1.aspmx.l.google.com`
+- **Microsoft 365 indicators:** `targetco-com.mail.protection.outlook.com`
+- **Self-hosted Exchange:** Typically a subdomain like `mail.targetco.com` pointing to a corporate IP
+- Email platform reveals authentication methods, phishing opportunities, and password spray targets
+- Backup MX records (lower priority, higher number) sometimes point to less-secure mail relay servers
+
+**NS Record (Name Server Record)**
+
+Identifies the authoritative DNS servers for a domain.
+
+```bash
+dig targetco.com NS
+
+# Response
+targetco.com.    86400    IN    NS    ns1.targetco.com.
+targetco.com.    86400    IN    NS    ns2.targetco.com.
+
+# OR (revealing DNS hosting provider)
+targetco.com.    86400    IN    NS    ns-1234.awsdns-12.com.     ← AWS Route 53
+targetco.com.    86400    IN    NS    ns-5678.awsdns-34.co.uk.
+```
+
+**Intelligence value:**
+- Reveals DNS hosting provider (AWS Route 53, Cloudflare, Azure DNS, Google Cloud DNS)
+- Self-hosted NS records (ns1.targetco.com) reveal additional IP addresses to investigate
+- DNS provider may have security implications (DNS hijacking attacks target specific providers)
+- Cloudflare NS records often mean IPv4 addresses are proxied/hidden
+
+**SOA Record (Start of Authority)**
+
+Contains administrative information about a DNS zone, including the primary name server and the email address of the zone administrator.
+
+```bash
+dig targetco.com SOA
+
+# Response
+targetco.com.    3600    IN    SOA    ns1.targetco.com. dnsadmin.targetco.com. (
+                                      2024010101  ; Serial
+                                      3600        ; Refresh
+                                      900         ; Retry
+                                      604800      ; Expire
+                                      300 )       ; Minimum TTL
+```
+
+**Intelligence value:**
+- `dnsadmin.targetco.com` — The second field is the DNS administrator's email address (replace the first `.` with `@`): `dnsadmin@targetco.com`
+- This is a direct email address for a technical administrator
+- Serial number format often reveals the last update date (common format: YYYYMMDDNN)
+
+**TXT Record (Text Record)**
+
+A versatile record type containing arbitrary text. Used for numerous verification and configuration purposes.
+
+```bash
+dig targetco.com TXT
+
+# Common responses
+targetco.com.    3600    IN    TXT    "v=spf1 include:_spf.google.com include:sendgrid.net ip4:203.0.113.50 ~all"
+targetco.com.    3600    IN    TXT    "MS=ms12345678"
+targetco.com.    3600    IN    TXT    "google-site-verification=AbCdEfGhIjKlMnOpQrStUvWxYz"
+targetco.com.    3600    IN    TXT    "atlassian-domain-verification=AbCdEf12345"
+```
+
+**Intelligence value — TXT records are a goldmine:**
+
+| TXT Record Content | Intelligence Revealed |
+|-------------------|----------------------|
+| `v=spf1 include:_spf.google.com` | Uses Google Workspace for email |
+| `v=spf1 include:sendgrid.net` | Uses SendGrid for marketing emails |
+| `v=spf1 include:_spf.salesforce.com` | Uses Salesforce (email integration) |
+| `v=spf1 ip4:203.0.113.50` | Mail server IP (direct IP revelation) |
+| `MS=ms12345678` | Microsoft 365 domain verification — organization is on Microsoft 365 |
+| `google-site-verification=...` | Google Search Console verification — uses Google services |
+| `atlassian-domain-verification=...` | Uses Atlassian products (Jira, Confluence, Bitbucket) |
+| `docusign=...` | Uses DocuSign for e-signatures |
+| `stripe-verification=...` | Uses Stripe for payments (financial data!) |
+| `facebook-domain-verification=...` | Facebook/Meta advertising integration |
+| `_dmarc` (separate record) | DMARC policy (reveals email security posture) |
+
+**DMARC Record:**
+
+```bash
+dig _dmarc.targetco.com TXT
+
+# Response options
+"v=DMARC1; p=none; rua=mailto:dmarc@targetco.com"    ← No enforcement (easy phishing)
+"v=DMARC1; p=quarantine; ..."                          ← Moderate protection
+"v=DMARC1; p=reject; ..."                              ← Strong protection
+
+# p=none means phishing emails spoofing @targetco.com will be DELIVERED
+```
+
+**DMARC intelligence:** 
+- `p=none` — The organization does not enforce DMARC. Spoofed emails using their domain will be delivered to recipients. Directly relevant to phishing pre-text design.
+- The `rua` (reporting URI) reveals an email address for DMARC reports — a real internal email address.
+
+**SPF Record Analysis:**
+
+```bash
+dig targetco.com TXT | grep spf
+
+# v=spf1 include:_spf.google.com include:sendgrid.net include:_spf.salesforce.com ip4:203.0.113.0/24 ip6:2001:db8::/32 ~all
+```
+
+This single SPF record reveals:
+- Google Workspace (corporate email)
+- SendGrid (marketing/transactional email — phishing campaigns often come from here)
+- Salesforce (CRM platform)
+- Direct IP range 203.0.113.0/24 (mail server IPs)
+- IPv6 range 2001:db8::/32
+
+**CNAME Record (Canonical Name Record)**
+
+Maps one hostname to another hostname (an alias).
+
+```bash
+dig www.targetco.com CNAME
+
+# Responses
+www.targetco.com.    300    IN    CNAME    targetco.com.
+www.targetco.com.    300    IN    CNAME    d1234567890.cloudfront.net.    ← CloudFront CDN
+www.targetco.com.    300    IN    CNAME    targetco.azurewebsites.net.    ← Azure App Service
+www.targetco.com.    300    IN    CNAME    targetco.github.io.            ← GitHub Pages
+```
+
+**Intelligence value:**
+- Reveals content delivery networks (CloudFront, Cloudflare, Fastly, Akamai)
+- Reveals cloud hosting services (Azure Web Apps, AWS Elastic Beanstalk, Heroku, GitHub Pages)
+- CNAMEs to third-party services reveal vendor relationships
+- **Subdomain takeover:** If a CNAME points to a third-party service that is no longer configured, the subdomain may be vulnerable to takeover
+
+**PTR Record (Pointer Record / Reverse DNS)**
+
+Maps an IP address back to a hostname. The reverse of an A record.
+
+```bash
+# Reverse DNS lookup
+dig -x 203.0.113.50
+nslookup 203.0.113.50
+
+# Response
+50.113.0.203.in-addr.arpa.    3600    IN    PTR    mail.targetco.com.
+```
+
+**Intelligence value:**
+- Reveals the hostname associated with an IP address
+- Particularly valuable when you have an IP from a log, packet capture, or other source and need to identify the system
+- Reveals infrastructure naming conventions (the pattern used in `mail.targetco.com` vs `web01.prod.targetco.com` reveals a lot about internal structure)
+
+**SRV Record (Service Record)**
+
+Specifies the location (hostname and port) of servers for specific services.
+
+```bash
+dig _sip._tcp.targetco.com SRV
+dig _autodiscover._tcp.targetco.com SRV
+dig _xmpp-server._tcp.targetco.com SRV
+
+# Response
+_autodiscover._tcp.targetco.com.    3600    IN    SRV    0 0 443 autodiscover.targetco.com.
+```
+
+**Intelligence value:**
+- `_autodiscover._tcp` → Microsoft Exchange/Office 365 autodiscovery — confirms Microsoft 365 and reveals Exchange server
+- `_sip._tcp` → SIP/VoIP server → Voice over IP infrastructure
+- `_xmpp-server._tcp` → XMPP/Jabber server → Instant messaging
+- `_kerberos._tcp` → Kerberos → Active Directory present (major finding)
+- `_ldap._tcp` → LDAP → Active Directory present
+
+**CAA Record (Certification Authority Authorization)**
+
+Specifies which Certificate Authorities (CAs) are authorized to issue SSL/TLS certificates for the domain.
+
+```bash
+dig targetco.com CAA
+
+# Response
+targetco.com.    3600    IN    CAA    0 issue "letsencrypt.org"
+targetco.com.    3600    IN    CAA    0 issue "digicert.com"
+targetco.com.    3600    IN    CAA    0 issuewild "digicert.com"
+```
+
+**Intelligence value:**
+- Reveals which CAs the organization uses → cert monitoring strategy
+- If Let's Encrypt only → likely smaller/budget-conscious operations
+- If DigiCert/Sectigo/Entrust → enterprise-grade certificates
+- Absence of CAA records means any CA can issue certificates → higher phishing certificate risk
+
+---
+
+### 3.1.6 DNS Reconnaissance — Advanced Techniques
+
+#### Zone Transfer (AXFR)
+
+A DNS zone transfer is the mechanism by which DNS servers replicate zone data to secondary servers. If misconfigured, a zone transfer can be requested by anyone, returning the complete list of all DNS records in the zone.
+
+**Attempting a zone transfer:**
+
+```bash
+# Identify nameservers first
+dig targetco.com NS
+
+# Attempt zone transfer from each nameserver
+dig axfr targetco.com @ns1.targetco.com
+dig axfr targetco.com @ns2.targetco.com
+
+# Using nslookup
+nslookup
+> server ns1.targetco.com
+> ls -d targetco.com
+```
+
+**Successful zone transfer result:**
+
+```
+; <<>> DiG 9.18.0 <<>> axfr targetco.com @ns1.targetco.com
+targetco.com.        86400    IN    SOA    ns1.targetco.com. admin.targetco.com. ...
+targetco.com.        86400    IN    NS     ns1.targetco.com.
+targetco.com.        86400    IN    A      203.0.113.50
+www.targetco.com.    86400    IN    A      203.0.113.50
+mail.targetco.com.   86400    IN    A      203.0.113.10
+vpn.targetco.com.    86400    IN    A      203.0.113.15
+dev.targetco.com.    86400    IN    A      10.0.1.100
+staging.targetco.com. 86400  IN    A      203.0.113.20
+db01.targetco.com.   86400    IN    A      10.0.1.200
+internal.targetco.com. 86400 IN    A      10.0.0.1
+```
+
+This instantly reveals the entire internal network structure. Zone transfers are considered **active reconnaissance** (you're querying the target's DNS server), but the information returned is public (just poorly protected).
+
+**Note:** Most modern, properly configured DNS servers restrict zone transfers to specific secondary server IPs. Zone transfer success is itself a critical vulnerability finding.
+
+#### DNS Brute Forcing
+
+When zone transfers fail (as they usually should), subdomain discovery is accomplished by brute forcing — querying the target's DNS server with a list of common subdomain names.
+
+```bash
+# Using dnsx
+dnsx -d targetco.com -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+
+# Using ffuf for DNS brute forcing
+ffuf -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -u http://FUZZ.targetco.com -v
+
+# Using gobuster for DNS enumeration
+gobuster dns -d targetco.com -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt
+
+# Using amass (passive mode — no active queries)
+amass enum -passive -d targetco.com
+
+# Using amass (active mode)
+amass enum -active -d targetco.com -brute
+```
+
+**Common Subdomain Wordlists:**
+- SecLists (`/usr/share/seclists/Discovery/DNS/`) — The de-facto standard
+- `subdomains-top1million-5000.txt` — Fast, covers most common subdomains
+- `subdomains-top1million-110000.txt` — Comprehensive
+- `dns-Jhaddix.txt` — Curated by renowned bug bounty hunter Jason Haddix
+
+#### DNS History and Passive DNS
+
+Historical DNS records reveal:
+- Previous IP addresses (before migration to cloud/CDN)
+- Past subdomain configurations
+- Infrastructure changes over time
+
+**Tools for DNS history:**
+
+| Tool | URL | What it Shows |
+|------|-----|---------------|
+| **SecurityTrails** | https://securitytrails.com | Complete DNS history, subdomains, IP history |
+| **DNSHistory.io** | https://dnshistory.org | Historical DNS records |
+| **ViewDNS.info** | https://viewdns.info | DNS history, reverse IP, IP history |
+| **PassiveDNS (Farsight DNSDB)** | https://www.farsightsecurity.com | Passive DNS database (enterprise) |
+| **RiskIQ Community** | https://community.riskiq.com | Passive DNS, certificate history |
+
+**Why DNS history matters:**
+
+Organizations that move from direct hosting to CDN (e.g., Cloudflare) often have their real IP address in DNS history before the move. The CDN hides the real IP in current DNS, but historical records expose it:
+
+```
+Current A record: targetco.com → 104.21.x.x (Cloudflare IP — not the real server)
+Historical DNS:   targetco.com → 203.0.113.50 (Real origin server, now bypasses CDN)
+```
+
+Direct access to the origin IP bypasses:
+- Web Application Firewall (WAF)
+- DDoS protection
+- Rate limiting
+- Bot detection
+
+---
+
+### 3.1.7 Identification of Technical and Administrative Contacts
+
+Technical and administrative contacts are directly relevant to penetration testing because:
+1. They are the people who manage the systems being tested
+2. Their contact information enables social engineering pretext construction
+3. Their email addresses are high-value targets for credential phishing
+4. Their technical roles revealed through public profiles expose technologies in use
+
+#### WHOIS Contact Records
+
+WHOIS records for domain registrations contain:
+- **Registrant contact:** The entity (person or organization) that owns the domain
+- **Administrative contact:** The person responsible for administrative matters
+- **Technical contact:** The person responsible for technical management
+
+```bash
+whois targetco.com
+
+# Output (pre-GDPR, or for non-privacy-protected registrations)
+Domain Name: TARGETCO.COM
+Registry Domain ID: 1234567890_DOMAIN_COM-VRSN
+Registrar: GoDaddy.com, LLC
+
+Registrant Name: John Smith
+Registrant Organization: Target Company Inc.
+Registrant Street: 123 Corporate Drive
+Registrant City: San Francisco
+Registrant State/Province: CA
+Registrant Postal Code: 94105
+Registrant Country: US
+Registrant Phone: +1.4155551234
+Registrant Email: john.smith@targetco.com
+
+Admin Name: Jane Doe
+Admin Email: it-admin@targetco.com
+
+Tech Name: Bob Johnson
+Tech Email: dns-admin@targetco.com
+
+Name Server: NS1.TARGETCO.COM
+Name Server: NS2.TARGETCO.COM
+
+DNSSEC: unsigned
+```
+
+**Intelligence extracted:**
+- Physical address (useful for physical penetration testing, social engineering)
+- Direct email addresses of three named individuals
+- Registrar (GoDaddy — relevant for domain hijacking attack surface)
+- DNSSEC status (unsigned → no DNSSEC protection → DNS hijacking more feasible)
+- Name servers hosting their own DNS (ns1.targetco.com → own DNS infrastructure)
+
+**GDPR Impact on WHOIS:**
+
+Since GDPR came into force (May 2018), most domain registrars have redacted personal information from public WHOIS for .com, .net, .org, and other gTLDs for registrants in the EU. This has significantly reduced the intelligence value of WHOIS for many domains. However:
+
+- Country-code TLDs (ccTLDs) like .uk, .au, .ca have varying GDPR compliance
+- US-based organizations often still have exposed WHOIS data
+- WHOIS history tools (SecurityTrails, DomainTools) may have pre-GDPR records
+- Whois for IP ranges (ARIN, RIPE, APNIC) is less affected by GDPR
+
+**WHOIS for IP Ranges:**
+
+Organizational IP ranges are registered with Regional Internet Registries (RIRs):
+
+| RIR | Region | Website |
+|-----|--------|---------|
+| **ARIN** | North America | https://search.arin.net |
+| **RIPE NCC** | Europe, Middle East, Central Asia | https://apps.db.ripe.net |
+| **APNIC** | Asia-Pacific | https://wq.apnic.net |
+| **LACNIC** | Latin America, Caribbean | https://lacnic.net |
+| **AFRINIC** | Africa | https://afrinic.net |
+
+```bash
+# IP WHOIS lookup
+whois 203.0.113.50
+
+# Response
+NetRange: 203.0.113.0 - 203.0.113.255
+CIDR: 203.0.113.0/24
+NetName: TARGETCO-NET
+NetHandle: NET-203-0-113-0-1
+Parent: (NET-203-0-0-0-1)
+NetType: Direct Assignment
+Organization: Target Company Inc. (TCI-12)
+OrgName: Target Company Inc.
+OrgId: TCI-12
+Address: 123 Corporate Drive
+City: San Francisco
+StateProv: CA
+PostalCode: 94105
+Country: US
+OrgAbuseEmail: abuse@targetco.com
+OrgTechEmail: noc@targetco.com
+```
+
+This reveals the organization's **full IP range**, enabling systematic scanning of all their registered IPs, and exposes NOC (Network Operations Center) and abuse contact emails — technical staff.
+
+#### BGP Intelligence — Autonomous System Numbers
+
+Large organizations own their own IP routing infrastructure, identified by an **Autonomous System Number (ASN)**.
+
+```bash
+# Find ASN for organization
+whois -h whois.bgp.he.net targetco.com
+
+# Query BGP routing data
+# https://bgp.he.net  ← Hurricane Electric BGP Toolkit
+# https://bgpview.io  ← Visual BGP explorer
+
+# Tool: asnmap
+asnmap -a AS12345      # Get all IPs for an ASN
+asnmap -org "Target Company"   # Find ASN by org name
+```
+
+**Why ASN intelligence matters:**
+
+An organization's ASN reveals their entire IPv4 and IPv6 address space — every IP range they legitimately own globally. This is the most comprehensive method of identifying all the organization's Internet-facing IP space.
+
+---
+
+### 3.1.8 WHOIS Intelligence — Extracting Maximum Value
+
+Beyond the basic contact information, WHOIS data contains several additional intelligence dimensions:
+
+#### Domain Portfolio Discovery
+
+Organizations typically own multiple domains — the primary domain, branded product domains, defensive registrations, and regional variations.
+
+**Reverse WHOIS:** Finding all domains registered by the same registrant:
+
+```bash
+# Using DomainTools (commercial)
+# Search by registrant email, name, or organization
+
+# Using ViewDNS.info (free)
+# https://viewdns.info/reversewhois/
+
+# Using SecurityTrails
+# https://securitytrails.com/list/registrant_email/it-admin@targetco.com
+```
+
+This can reveal:
+- Unreleased product domains
+- Acquisition targets (domains registered for companies being acquired)
+- Internal project names
+- Regional subsidiaries
+
+#### Registrar Security Analysis
+
+The domain registrar is a critical attack surface. Registrar account compromise enables:
+- DNS hijacking (changing NS records to attacker-controlled servers)
+- Domain transfer to attacker control
+- WHOIS email change (enabling password reset attacks on services)
+
+**Indicators of registrar security posture:**
+- Registrar reputation (GoDaddy, Namecheap vs. enterprise registrars like MarkMonitor)
+- DNSSEC enabled (protects against certain DNS attacks)
+- Registrar lock status (prevents unauthorized transfers)
+- Privacy protection status
+
+---
+
+### 3.1.9 DNS Lookups — Lab-Level Practical Reference
+
+This section provides a comprehensive, hands-on reference for DNS reconnaissance commands and workflows as used in professional lab environments.
+
+#### Essential DNS Tools
+
+**dig (Domain Information Groper)**
+
+The primary command-line DNS tool. Highly flexible and returns detailed information.
+
+```bash
+# Basic A record lookup
+dig targetco.com
+
+# Specific record type
+dig targetco.com MX
+dig targetco.com NS
+dig targetco.com TXT
+dig targetco.com AAAA
+dig targetco.com SOA
+dig targetco.com CAA
+dig targetco.com SRV
+
+# Short output (answer only)
+dig targetco.com +short
+
+# All records (equivalent to ANY — not all servers honor this)
+dig targetco.com ANY
+
+# Trace the complete resolution path
+dig targetco.com +trace
+
+# Reverse lookup
+dig -x 203.0.113.50
+
+# Query a specific DNS server
+dig @8.8.8.8 targetco.com        # Use Google's DNS
+dig @1.1.1.1 targetco.com        # Use Cloudflare's DNS
+dig @ns1.targetco.com targetco.com  # Query target's own nameserver
+
+# Zone transfer attempt
+dig axfr targetco.com @ns1.targetco.com
+
+# DNS over HTTPS (bypasses local DNS filtering)
+dig targetco.com @https://cloudflare-dns.com/dns-query
+
+# DNSSEC verification
+dig targetco.com +dnssec
+```
+
+**nslookup**
+
+Simpler DNS tool, available on Windows and Linux.
+
+```bash
+# Basic lookup
+nslookup targetco.com
+
+# Specific record type
+nslookup -type=MX targetco.com
+nslookup -type=NS targetco.com
+nslookup -type=TXT targetco.com
+nslookup -type=ANY targetco.com
+
+# Query specific server
+nslookup targetco.com 8.8.8.8
+
+# Interactive mode for zone transfer
+nslookup
+> server ns1.targetco.com
+> set type=any
+> targetco.com
+> ls -d targetco.com   # Zone transfer in interactive mode
+```
+
+**host**
+
+Simple, clean DNS lookup tool.
+
+```bash
+host targetco.com
+host -t MX targetco.com
+host -t NS targetco.com
+host -a targetco.com    # All records
+host 203.0.113.50       # Reverse lookup
+```
+
+#### DNS Reconnaissance Workflow — Complete Lab Procedure
+
+```bash
+#!/bin/bash
+# Professional DNS Reconnaissance Script
+DOMAIN="targetco.com"
+OUTPUT_DIR="/tmp/dns_recon_${DOMAIN}"
+mkdir -p $OUTPUT_DIR
+
+echo "=== DNS RECONNAISSANCE: $DOMAIN ===" | tee $OUTPUT_DIR/summary.txt
+
+# 1. Identify nameservers
+echo "[*] Nameservers:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN NS +short | tee $OUTPUT_DIR/nameservers.txt
+
+# 2. SOA record (admin email)
+echo "[*] SOA Record:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN SOA +short | tee $OUTPUT_DIR/soa.txt
+
+# 3. A records
+echo "[*] A Records:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN A +short | tee $OUTPUT_DIR/a_records.txt
+
+# 4. MX records (email infrastructure)
+echo "[*] MX Records:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN MX +short | tee $OUTPUT_DIR/mx_records.txt
+
+# 5. TXT records (SPF, DMARC, verification tokens)
+echo "[*] TXT Records:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN TXT +short | tee $OUTPUT_DIR/txt_records.txt
+
+# 6. DMARC policy
+echo "[*] DMARC:" | tee -a $OUTPUT_DIR/summary.txt
+dig _dmarc.$DOMAIN TXT +short | tee $OUTPUT_DIR/dmarc.txt
+
+# 7. DKIM (try common selectors)
+for selector in default google mail k1 selector1 selector2; do
+    result=$(dig ${selector}._domainkey.$DOMAIN TXT +short)
+    if [ ! -z "$result" ]; then
+        echo "[*] DKIM Selector: $selector" | tee -a $OUTPUT_DIR/summary.txt
+        echo "$result" | tee -a $OUTPUT_DIR/dkim.txt
+    fi
+done
+
+# 8. Zone transfer attempts
+echo "[*] Attempting zone transfers..." | tee -a $OUTPUT_DIR/summary.txt
+while read ns; do
+    echo "[*] Trying AXFR from $ns..." | tee -a $OUTPUT_DIR/summary.txt
+    dig axfr $DOMAIN @$ns | tee $OUTPUT_DIR/axfr_${ns}.txt
+done < $OUTPUT_DIR/nameservers.txt
+
+# 9. IPv6
+echo "[*] AAAA Records:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN AAAA +short | tee $OUTPUT_DIR/aaaa_records.txt
+
+# 10. CAA
+echo "[*] CAA Records:" | tee -a $OUTPUT_DIR/summary.txt
+dig $DOMAIN CAA +short | tee $OUTPUT_DIR/caa.txt
+
+echo "[*] DNS Reconnaissance Complete. Results in $OUTPUT_DIR"
+```
+
+#### Online DNS Reconnaissance Tools
+
+| Tool | URL | Best For |
+|------|-----|---------|
+| **DNSDumpster** | https://dnsdumpster.com | Visual DNS map, subdomains, MX, TXT |
+| **SecurityTrails** | https://securitytrails.com | DNS history, all record types |
+| **MXToolbox** | https://mxtoolbox.com | Email infrastructure, MX, SPF, DMARC analysis |
+| **DNSlytics** | https://dnslytics.com | Reverse DNS, related domains |
+| **ViewDNS.info** | https://viewdns.info | Comprehensive DNS tools |
+| **IntoDNS** | https://intodns.com | DNS health check and misconfiguration detection |
+| **DMARC Inspector** | https://dmarcian.com/dmarc-inspector/ | DMARC policy analysis |
+| **MXToolbox DKIM Checker** | https://mxtoolbox.com/dkim.aspx | DKIM record analysis |
+| **ARIN** | https://search.arin.net | IP WHOIS, ASN lookups |
+| **BGP.he.net** | https://bgp.he.net | BGP routing, ASN details |
+
+---
+
+### 3.1.10 Cloud vs. Self-Hosted Applications and Related Subdomains
+
+Modern organizations rarely run entirely self-hosted infrastructure. Understanding the distinction between cloud-hosted and self-hosted assets dramatically affects the penetration testing approach, authorization requirements, and vulnerability surface.
+
+#### Identifying Cloud-Hosted Infrastructure
+
+**Method 1: DNS CNAME Analysis**
+
+CNAME records pointing to cloud provider domains are the clearest indicator of cloud hosting:
+
+| CNAME Destination | Cloud Service |
+|------------------|--------------|
+| `*.cloudfront.net` | AWS CloudFront CDN |
+| `*.awsglobalaccelerator.com` | AWS Global Accelerator |
+| `*.elasticbeanstalk.com` | AWS Elastic Beanstalk |
+| `*.s3.amazonaws.com` | AWS S3 |
+| `*.s3-website-*.amazonaws.com` | AWS S3 Static Website |
+| `*.azurewebsites.net` | Azure App Service |
+| `*.azurefd.net` | Azure Front Door |
+| `*.blob.core.windows.net` | Azure Blob Storage |
+| `*.trafficmanager.net` | Azure Traffic Manager |
+| `*.appspot.com` | Google App Engine |
+| `*.run.app` | Google Cloud Run |
+| `*.cloudfunctions.net` | Google Cloud Functions |
+| `*.storage.googleapis.com` | Google Cloud Storage |
+| `*.herokussl.com` / `*.herokudns.com` | Heroku |
+| `*.netlify.app` | Netlify |
+| `*.vercel.app` | Vercel |
+| `*.github.io` | GitHub Pages |
+| `*.pages.dev` | Cloudflare Pages |
+| `*.fastly.net` | Fastly CDN |
+| `*.edgekey.net` | Akamai |
+| `*.cdn.cloudflare.net` | Cloudflare CDN |
+
+**Method 2: IP Range Identification**
+
+Cloud providers publish their IP ranges. Identifying that a target IP belongs to a cloud provider IP range reveals cloud hosting:
+
+- **AWS IP ranges:** https://ip-ranges.amazonaws.com/ip-ranges.json
+- **Azure IP ranges:** https://download.microsoft.com/download/7/1/D/71D86715-5596-4529-9B13-DA13A5DE5B63/ServiceTags_Public.json
+- **GCP IP ranges:** https://cloud.google.com/compute/docs/faq#find_ip_range
+- **Cloudflare IP ranges:** https://cloudflare.com/ips/
+
+```bash
+# Check if IP belongs to AWS
+curl https://ip-ranges.amazonaws.com/ip-ranges.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+target_ip = '203.0.113.50'
+for prefix in data['prefixes']:
+    import ipaddress
+    if ipaddress.ip_address(target_ip) in ipaddress.ip_network(prefix['ip_prefix']):
+        print(f'AWS Region: {prefix[\"region\"]}, Service: {prefix[\"service\"]}')
+"
+```
+
+**Method 3: HTTP Response Headers**
+
+HTTP headers often reveal cloud provider and CDN usage:
+
+```bash
+curl -I https://www.targetco.com
+
+# Headers revealing cloud services:
+# X-Amz-Cf-Id: → CloudFront
+# CF-Ray: → Cloudflare
+# X-Azure-Ref: → Azure Front Door
+# X-GUploader-UploadID: → Google Cloud Storage
+# X-Served-By: cache-... → Fastly
+# Via: 1.1 akamai → Akamai
+# Server: AmazonS3 → AWS S3
+# X-Powered-By: Express on Google Cloud → GCP
+```
+
+#### Subdomain Enumeration — Professional Techniques
+
+Subdomain discovery is one of the highest-value activities in passive reconnaissance. Modern enterprise organizations have hundreds or thousands of subdomains, many of which are forgotten, unmanaged, or running legacy software.
+
+**Certificate Transparency (CT) Logs:**
+
+Every SSL/TLS certificate issued by a trusted CA is logged to public Certificate Transparency logs. These logs contain the domain names (including subdomains) in every certificate issued.
+
+```bash
+# crt.sh — The primary CT log search interface
+curl 'https://crt.sh/?q=%.targetco.com&output=json' | \
+python3 -c "import json,sys; [print(e['name_value']) for e in json.load(sys.stdin)]" | \
+sort -u
+
+# Subfinder — Comprehensive passive subdomain discovery
+subfinder -d targetco.com -all -recursive
+
+# Amass — Comprehensive subdomain enumeration
+amass enum -passive -d targetco.com
+amass enum -active -d targetco.com
+
+# assetfinder — Fast, focused subdomain discovery
+assetfinder targetco.com
+
+# chaos — Project Discovery's subdomain database
+chaos -d targetco.com
+```
+
+**Why CT logs are the most valuable passive subdomain source:**
+
+- Cover all publicly trusted SSL certificates since approximately 2013
+- Include certificates for subdomains that may no longer resolve (revealing historical infrastructure)
+- Include wildcard certificates (*.targetco.com) that hint at dynamic subdomain usage
+- Include certificates for internal systems that accidentally got public certs
+- Are 100% passive — no interaction with the target
+
+**Subdomain Takeover:**
+
+Subdomain takeover is a vulnerability where a subdomain's DNS record points to a third-party service that is no longer configured for that subdomain, allowing an attacker to claim the subdomain.
+
+```
+DNS: dev.targetco.com → CNAME → targetco.herokuapp.com (Heroku)
+If targetco has cancelled their Heroku account, targetco.herokuapp.com is unclaimed.
+Attacker creates a Heroku app at targetco.herokuapp.com
+Attacker now controls dev.targetco.com
+```
+
+This enables:
+- Serving malicious content under the target's legitimate domain
+- Stealing cookies scoped to `*.targetco.com`
+- Bypassing Content Security Policy (CSP)
+- Credential phishing under a trusted domain
+
+```bash
+# Check for subdomain takeover vulnerabilities
+subjack -w discovered_subdomains.txt -t 100 -timeout 30 -o results.txt -ssl
+nuclei -l discovered_subdomains.txt -t takeovers/
+```
+
+**Cloud-Specific Subdomain Intelligence:**
+
+**AWS S3 Buckets:**
+S3 bucket names in URLs often follow predictable patterns:
+```
+https://targetco-assets.s3.amazonaws.com
+https://s3.amazonaws.com/targetco-backups
+https://targetco.s3-website-us-east-1.amazonaws.com
+```
+
+Tools for S3 bucket discovery:
+```bash
+# S3Scanner
+s3scanner scan --bucket targetco
+s3scanner scan --bucket-file probable_bucket_names.txt
+
+# AWS CLI (if credentials available)
+aws s3 ls s3://targetco-assets --no-sign-request
+
+# lazys3
+ruby lazys3.rb targetco
+```
+
+Common bucket misconfigurations:
+- Public read access (anyone can list and download files)
+- Public write access (anyone can upload — potential for malicious content)
+- Exposed bucket policy showing other IAM principals with access
+
+---
+
+### 3.1.11 Social Media Scraping
+
+Social media is one of the most underestimated intelligence sources in professional penetration testing. Employees voluntarily and publicly disclose enormous amounts of information relevant to security assessments.
+
+#### LinkedIn — The Primary Corporate Intelligence Source
+
+LinkedIn is the most valuable social media platform for penetration testing reconnaissance because it is specifically designed for professional networking and intentionally exposes professional information.
+
+**Intelligence Categories from LinkedIn:**
+
+**1. Employee Enumeration**
+
+```
+Search: "Target Company Inc" employees
+Result: 847 employees found
+
+Filter by:
+- Department: Information Technology (reveals IT staff count and roles)
+- Location (reveals office locations)
+- Seniority: Entry Level / Associate (reveals junior staff who may be social engineering targets)
+```
+
+**High-value employee targets:**
+- IT administrators (system access)
+- Developers (code access, internal tools)
+- Security team members (defenses, tools in use)
+- C-suite executives (high-credibility email targets)
+- Finance staff (wire transfer fraud targets)
+- Receptionists and administrative staff (physical access social engineering)
+- Help desk staff (password reset social engineering)
+
+**2. Technology Stack Discovery from Job Listings**
+
+Job postings are extraordinarily revealing because they list exactly what technologies are in use:
+
+```
+Job Title: Senior DevOps Engineer at Target Company
+
+Requirements:
+• 5+ years experience with AWS (EC2, EKS, RDS, S3, Lambda, VPC, CloudWatch)
+• Strong proficiency with Terraform for infrastructure as code
+• Experience with Kubernetes and Helm chart deployment
+• Familiarity with CI/CD pipelines (Jenkins, GitLab CI, or CircleCI)
+• HashiCorp Vault for secrets management
+• Elasticsearch, Kibana, and Logstash (ELK stack) for log management
+• Experience with Prometheus and Grafana for monitoring
+• PostgreSQL and Redis database management
+• Proficiency with Docker containerization
+```
+
+This single job listing reveals:
+- Cloud: AWS (with specific services identified)
+- IaC: Terraform
+- Container orchestration: Kubernetes + Helm
+- CI/CD: Jenkins, GitLab CI, or CircleCI
+- Secrets management: HashiCorp Vault
+- Logging: ELK stack
+- Monitoring: Prometheus + Grafana
+- Databases: PostgreSQL + Redis
+- Containerization: Docker
+
+Every one of these technologies has known vulnerabilities and misconfigurations that can be specifically targeted.
+
+**3. Individual Employee Profile Intelligence**
+
+```
+John Smith — Senior Network Engineer, Target Company Inc.
+
+Current: "Leading network security initiative migrating from on-prem Cisco ASA 
+         firewalls to Palo Alto NGFW with Panorama management. Also managing 
+         our SD-WAN deployment with VMware VeloCloud."
+
+Skills: Cisco ASA, Palo Alto Networks, Panorama, SD-WAN, VeloCloud, 
+        BGP, OSPF, MPLS, Wireshark, SolarWinds
+
+"Excited to be presenting at Cisco Live 2024 on our journey to 
+SD-WAN! Our office locations in San Francisco, Austin, and London 
+are all now connected."
+```
+
+This single profile reveals:
+- Firewall technology (Cisco ASA → Palo Alto NGFW transition in progress)
+- Specific management platform (Panorama)
+- SD-WAN vendor (VMware VeloCloud)
+- All office locations (San Francisco, Austin, London)
+- Network protocols in use (BGP, OSPF, MPLS)
+- Monitoring tools (SolarWinds)
+- The engineer's real name and potentially their email address
+
+**LinkedIn Search Techniques:**
+
+```
+# Site-specific Google searches for LinkedIn
+site:linkedin.com/in "Target Company" "network engineer"
+site:linkedin.com/in "Target Company" "security"
+site:linkedin.com/in "Target Company" "developer"
+site:linkedin.com/in "Target Company" "IT manager"
+
+# LinkedIn Sales Navigator (premium) — most powerful
+# Full employee lists, contact info, organizational charts
+```
+
+**LinkedIn Reconnaissance Tools:**
+
+```bash
+# LinkedInt — LinkedIn intelligence gathering
+python LinkedInt.py -u your_linkedin_account -p password -k "Target Company"
+
+# CrossLinked — Employee enumeration via LinkedIn
+python crosslinked.py -f '{first}.{last}@targetco.com' "Target Company"
+# This both finds employee names AND constructs likely email addresses
+
+# linkedin2username — Generate username lists from LinkedIn scraping
+python linkedin2username.py -c "Target Company" -u your_account -p password
+```
+
+#### Twitter / X Intelligence
+
+Twitter (X) provides real-time organizational intelligence:
+
+**What employees tweet about:**
+- Technology outages ("our Splunk is down again...")
+- Security incidents ("just blocked a phishing campaign targeting @targetco")
+- New technology deployments ("just pushed our first workload to AWS!")
+- Company news and events
+- Personal information (vacation dates → reduced staffing)
+- Conference attendance (away from office)
+- Complaints about internal tools (revealing technology names)
+
+```bash
+# Twitter OSINT tools
+twint -u johndoe_sysadmin --tweets  # Scrape all tweets without API
+twint -s "targetco.com" --lang en   # Search tweets mentioning the target
+twint -u johndoe_sysadmin -o output.json --json
+
+# Advanced Twitter search operators
+site:twitter.com "Target Company" security breach
+site:twitter.com "targetco.com" password
+```
+
+#### GitHub and Code Repository Intelligence
+
+GitHub is one of the highest-value passive recon sources for technical intelligence. Developers commit sensitive information to public repositories constantly.
+
+**What to search for on GitHub:**
+
+```bash
+# GitHub Search — most powerful passive recon tool for technical data
+
+# Organization-specific searches
+site:github.com "targetco.com"
+site:github.com "targetco" "password"
+site:github.com "targetco" "api_key"
+site:github.com "targetco" "secret"
+site:github.com "targetco" "internal"
+
+# GitHub native search
+org:targetco                           # All repos in org
+org:targetco filename:.env             # .env files (credentials)
+org:targetco "BEGIN RSA PRIVATE KEY"  # Private keys
+org:targetco "AKIA"                    # AWS Access Key IDs (start with AKIA)
+org:targetco "mongodb://",            # Database connection strings
+org:targetco "postgresql://",
+org:targetco "mysql://"
+
+# GitHub Dorks (search patterns for sensitive data)
+"targetco.com" password
+"targetco.com" secret
+"targetco.com" token
+"targetco.com" api_key
+"targetco.com" private_key
+"@targetco.com" password
+```
+
+**GitHub OSINT Tools:**
+
+```bash
+# truffleHog — Searches git history for secrets
+trufflehog github --org targetco --json
+
+# GitLeaks — Audit git repos for secrets
+gitleaks detect --source /path/to/cloned/repo -v
+
+# Gitrob — Reconnaissance on GitHub organizations
+gitrob analyze targetco
+
+# git-secrets — Prevent credential commits (defensive, but reveals what to look for)
+```
+
+**What developers accidentally commit:**
+
+| Sensitive Data Type | Example |
+|--------------------|---------|
+| AWS credentials | `AKIAIOSFODNN7EXAMPLE / wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` |
+| API keys | `stripe_key = "------------------------"` |
+| Database credentials | `DB_PASS=Production_P@ssw0rd_2024` |
+| Private SSH keys | `-----BEGIN RSA PRIVATE KEY-----` |
+| SSL private keys | `-----BEGIN PRIVATE KEY-----` |
+| OAuth tokens | `-------------------------` |
+| JWT secrets | `--------------------------` |
+| Internal IP addresses | Connection strings with internal IPs |
+| Cloud configuration files | Terraform state files with resource details |
+
+---
+
+### 3.1.12 Employee Intelligence Gathering
+
+Employee intelligence gathering synthesizes social media, professional profiles, breach data, and public records to build detailed profiles of target organization personnel.
+
+#### Building the Target Employee Profile
+
+For each high-value employee target, a professional assessment builds:
+
+**The Target Profile Template:**
+
+```
+Employee Profile: John Smith
+===========================
+Current Role: Senior Systems Administrator, Target Company Inc.
+LinkedIn: linkedin.com/in/john-smith-sysadmin
+Twitter: @jsmith_sysadmin
+
+Contact Information:
+- Work email: j.smith@targetco.com (derived from email format)
+- Personal email: johnsmith1982@gmail.com (from breach data)
+- Phone: +1-415-555-1234 (from conference registration, LinkedIn)
+
+Technical Skills (from LinkedIn, GitHub, job listings):
+- Windows Server 2016/2019/2022
+- Active Directory, Group Policy, SCCM
+- VMware vSphere 7.0
+- PowerShell scripting
+- Backup: Veeam
+
+Personal Information (for social engineering pretext):
+- Alma mater: University of California, Berkeley (from LinkedIn)
+- Previous employer: CloudBase Inc. (from LinkedIn)
+- Hobbies: cycling, homebrewing (from Twitter)
+- Location: San Francisco, CA
+
+Exposure Assessment:
+- Appears in 3 data breaches (HaveIBeenPwned): LinkedIn breach, Adobe breach, Tumblr breach
+- Leaked password hash (LinkedIn 2012 breach): "LinkedInPasswordHash"
+- Password reuse risk: HIGH (common for accounts 10+ years old)
+
+Social Engineering Attack Vectors:
+1. IT Help Desk impersonation: "Hi John, this is Sarah from the IT help desk..."
+2. Vendor impersonation: "Hi, this is VMware support calling about your license renewal..."
+3. Password reset phishing: Custom email targeting @targetco.com with realistic IT branding
+4. Vishing (voice phishing): Calling directly using work context established from LinkedIn
+```
+
+#### Email Address Format Discovery
+
+Before email addresses can be used in social engineering or checked against breach databases, the organization's email format must be determined.
+
+**Method 1: Hunter.io**
+
+```bash
+# Hunter.io API
+curl "https://api.hunter.io/v2/domain-search?domain=targetco.com&api_key=YOUR_KEY"
+
+# Response
+{
+  "data": {
+    "domain": "targetco.com",
+    "organization": "Target Company Inc.",
+    "pattern": "{first}.{last}",    ← EMAIL FORMAT DISCOVERED
+    "emails": [
+      {"value": "john.smith@targetco.com", "type": "personal"},
+      {"value": "jane.doe@targetco.com", "type": "personal"},
+      {"value": "security@targetco.com", "type": "generic"}
+    ]
+  }
+}
+```
+
+**Common email formats:**
+
+| Format | Example |
+|--------|---------|
+| `{first}.{last}@domain.com` | john.smith@targetco.com |
+| `{first}{last}@domain.com` | johnsmith@targetco.com |
+| `{f}{last}@domain.com` | jsmith@targetco.com |
+| `{first}_{last}@domain.com` | john_smith@targetco.com |
+| `{first}@domain.com` | john@targetco.com |
+| `{last}{first}@domain.com` | smithjohn@targetco.com |
+| `{f}.{last}@domain.com` | j.smith@targetco.com |
+
+**Method 2: Email Format from Found Addresses**
+
+If even one employee's email is confirmed (from a breach database, email header, or other source), the format is revealed and can be applied to all other employee names.
+
+**Method 3: CrossLinked**
+
+```bash
+# CrossLinked: scrapes LinkedIn employees and generates email addresses
+python3 crosslinked.py -f '{first}.{last}@targetco.com' "Target Company"
+# Outputs: john.smith@targetco.com, jane.doe@targetco.com, etc.
+```
+
+**Method 4: Email Verification**
+
+Discovered email addresses can be verified (without sending an email) by:
+
+```bash
+# smtp-user-enum — Verifies email existence via SMTP
+smtp-user-enum -M VRFY -U users.txt -t mail.targetco.com
+smtp-user-enum -M EXPN -U users.txt -t mail.targetco.com
+smtp-user-enum -M RCPT -U users.txt -t mail.targetco.com
+
+# Note: VRFY and EXPN are often disabled on modern mail servers for security
+```
+
+---
+
+### 3.1.13 Cryptographic Flaws
+
+Cryptographic weaknesses discovered during passive reconnaissance provide direct attack vectors during the active exploitation phase. Understanding cryptographic flaws at a senior level requires deep knowledge of both the theoretical weaknesses and the practical exploitation techniques.
+
+#### Why Cryptographic Analysis Belongs in Passive Reconnaissance
+
+Passive reconnaissance can reveal cryptographic weaknesses without touching the target:
+- SSL/TLS certificate details are publicly visible
+- Certificate Transparency logs reveal certificate history
+- SSL test services (SSL Labs) provide detailed analysis of TLS configurations
+- DNS DMARC and DKIM records reveal email cryptographic configuration
+
+#### SSL/TLS Protocol Weaknesses
+
+**Protocol Version Vulnerabilities:**
+
+| Protocol | Version | Status | Known Attacks |
+|----------|---------|--------|--------------|
+| SSL 2.0 | Ancient | PROHIBITED | DROWN, complete deprecation |
+| SSL 3.0 | Ancient | PROHIBITED | POODLE |
+| TLS 1.0 | RFC 2246 (1999) | DEPRECATED | BEAST, POODLE (in CBC mode) |
+| TLS 1.1 | RFC 4346 (2006) | DEPRECATED | BEAST (partial) |
+| TLS 1.2 | RFC 5246 (2008) | CURRENT | Various cipher suite weaknesses |
+| TLS 1.3 | RFC 8446 (2018) | RECOMMENDED | No known practical attacks |
+
+**TLS 1.0 and 1.1 Deprecation:**
+- The IETF formally deprecated TLS 1.0 and TLS 1.1 in RFC 8996 (March 2021)
+- PCI DSS v3.2+ requires disabling TLS 1.0 for all in-scope systems
+- NIST SP 800-52 Rev 2 prohibits TLS 1.0 and 1.1 for federal systems
+- Finding TLS 1.0 or 1.1 support is a compliance finding in addition to a technical vulnerability
+
+**Cipher Suite Weaknesses:**
+
+A cipher suite specifies the algorithms used for key exchange, authentication, encryption, and integrity checking. Weak cipher suites are a common finding.
+
+Cipher Suite Format:
+```
+TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+ │    │     │      │        │       │
+ │    │     │      │        │       └── MAC/PRF algorithm (SHA384)
+ │    │     │      │        └── Cipher mode (GCM = authenticated)
+ │    │     │      └── Encryption algorithm and key size (AES-256)
+ │    │     └── Authentication algorithm (RSA)
+ │    └── Key exchange algorithm (ECDHE = Elliptic Curve Diffie-Hellman Ephemeral)
+ └── Protocol
+```
+
+**Weak/Deprecated Cipher Suites:**
+
+| Cipher Suite Issue | Specific Problem | Attack |
+|-------------------|-----------------|--------|
+| NULL cipher | No encryption | Plaintext exposure |
+| EXPORT ciphers | Deliberately weakened (40-56 bit) | FREAK, LOGJAM |
+| RC4 | Stream cipher with statistical biases | RC4 NOMORE |
+| DES/3DES | 56-bit DES key, 112-bit 3DES | SWEET32 |
+| RSA key exchange (no forward secrecy) | Static key exchange | Historical traffic decryption if key compromised |
+| MD5 for signatures | Collision vulnerabilities | Certificate forgery |
+| SHA1 for signatures | Collision vulnerabilities | SHAttered |
+| Anonymous DH (aDH/aNULL) | No server authentication | MitM |
+
+**Forward Secrecy (Perfect Forward Secrecy — PFS):**
+
+Forward secrecy means that session keys are not compromised even if the server's long-term private key is compromised. It is provided by Ephemeral key exchange algorithms:
+
+- **ECDHE** (Elliptic Curve Diffie-Hellman Ephemeral) — Preferred
+- **DHE** (Diffie-Hellman Ephemeral) — Acceptable, but slower than ECDHE
+- **RSA** key exchange — No forward secrecy (static keys)
+
+**Identification of TLS weaknesses during passive recon:**
+
+```bash
+# SSL Labs — Most comprehensive TLS analysis (passive — uses their servers)
+# https://www.ssllabs.com/ssltest/analyze.html?d=targetco.com
+
+# testssl.sh — Active tool but usable against own infrastructure
+testssl.sh --full targetco.com
+
+# sslscan — Active scanning tool
+sslscan targetco.com
+
+# nmap TLS scripts (active)
+nmap --script ssl-enum-ciphers -p 443 targetco.com
+nmap --script ssl-dh-params -p 443 targetco.com
+
+# Check for HSTS
+curl -I https://targetco.com | grep -i strict
+```
+
+#### Major TLS Vulnerabilities — Professional Reference
+
+**POODLE — Padding Oracle On Downgraded Legacy Encryption**
+- **CVE:** CVE-2014-3566
+- **Affects:** SSL 3.0 (original POODLE), TLS 1.0/1.1 (POODLE TLS variant)
+- **Mechanism:** Exploits CBC padding oracle in SSL 3.0 to decrypt sessions
+- **Impact:** Decryption of encrypted HTTP cookies, potentially exposing session tokens
+- **Mitigation:** Disable SSL 3.0 and TLS 1.0; use TLS 1.2+ with authenticated encryption modes
+
+**BEAST — Browser Exploit Against SSL/TLS**
+- **CVE:** CVE-2011-3389
+- **Affects:** TLS 1.0 using CBC mode cipher suites
+- **Mechanism:** Exploits a predictable IV (Initialization Vector) in TLS 1.0 CBC mode
+- **Impact:** Potential decryption of HTTPS traffic
+- **Mitigation:** TLS 1.2+ with AEAD ciphers (GCM mode); or RC4 (itself now deprecated)
+
+**HEARTBLEED**
+- **CVE:** CVE-2014-0160
+- **Affects:** OpenSSL 1.0.1 through 1.0.1f
+- **Mechanism:** Buffer over-read in the HeartBeat extension — allows reading 64KB of server memory per request
+- **Impact:** Exposure of private keys, session tokens, passwords from server memory
+- **Mitigation:** Upgrade to OpenSSL 1.0.1g or later; revoke and reissue all certificates
+
+```bash
+# Check for Heartbleed (active)
+nmap --script ssl-heartbleed -p 443 targetco.com
+```
+
+**FREAK — Factoring RSA Export Keys**
+- **CVE:** CVE-2015-0204
+- **Affects:** Servers supporting RSA EXPORT cipher suites (FREAK)
+- **Mechanism:** Client can be forced to use deliberately weakened 512-bit export RSA keys, which can be factored
+- **Impact:** Full session decryption via man-in-the-middle
+- **Mitigation:** Disable all EXPORT cipher suites
+
+**LOGJAM**
+- **CVE:** CVE-2015-4000
+- **Affects:** Servers supporting DHE EXPORT cipher suites (512-bit DH)
+- **Mechanism:** Similar to FREAK but targeting Diffie-Hellman
+- **Impact:** Downgrade to weak DH parameters, enabling session decryption
+- **Mitigation:** Disable DHE EXPORT; use 2048-bit+ DH parameters or ECDHE
+
+**DROWN — Decrypting RSA with Obsolete and Weakened eNcryption**
+- **CVE:** CVE-2016-0800
+- **Affects:** Any server sharing an RSA private key with a server that supports SSL 2.0
+- **Mechanism:** Uses SSL 2.0 vulnerabilities to decrypt TLS sessions
+- **Impact:** Decryption of TLS sessions for affected servers
+- **Mitigation:** Disable SSL 2.0 on all servers sharing a private key
+
+**SWEET32 — Birthday Attacks on 64-bit Block Ciphers**
+- **CVE:** CVE-2016-2183
+- **Affects:** 3DES (64-bit block cipher) in TLS
+- **Mechanism:** Birthday attack — after ~32GB of same-key traffic, collision reveals plaintext
+- **Impact:** Session cookie exposure in long-lived HTTPS sessions
+- **Mitigation:** Disable 3DES (RC4_128, 3DES_EDE_CBC) cipher suites; limit session renegotiation
+
+#### Certificate Weaknesses
+
+**Weak Key Sizes:**
+
+| Algorithm | Minimum Recommended | Deprecated Below |
+|-----------|--------------------|--------------------|
+| RSA | 2048 bits | 1024 bits (since 2013) |
+| ECDSA | 256 bits (P-256) | Below P-256 |
+| DSA | 2048 bits | 1024 bits |
+
+**Signature Algorithm Weaknesses:**
+
+- **MD5 signatures:** Cryptographically broken since 2004; MD5 signed certificates should be immediately revoked
+- **SHA-1 signatures:** Theoretically broken (SHAttered attack, 2017); browsers since 2017 reject SHA-1 certificates
+- **SHA-2 (SHA-256, SHA-384, SHA-512):** Current standard, no known practical weaknesses
+- **SHA-3:** Available but rarely deployed; provides additional algorithm diversity
+
+**Certificate Validity and Management Issues:**
+
+- **Expired certificates:** Indicates poor certificate management, potentially revealing processes for certificate deployment that can be abused
+- **Self-signed certificates:** Indicates non-standard deployment; may indicate test or internal systems exposed publicly
+- **Wildcard certificates (*.targetco.com):** A single wildcard certificate covers all subdomains; if the private key is compromised, ALL subdomains are compromised
+- **Overly broad SAN lists:** Many subdomains in SAN list reveals infrastructure (valuable for recon) and if one subjectAltName system is compromised, the certificate trust may be leveraged
+
+**Certificate Authority Trust Issues:**
+
+- **Unknown/private CA:** Certificate signed by an internal CA — server may only be intended for internal use but is externally exposed
+- **Distrusted CA:** A CA whose root certificate has been revoked or distrusted by major browsers (e.g., Symantec CAs distrusted in 2018)
+
+---
+
+### 3.1.14 Finding Information from SSL Certificates
+
+SSL/TLS certificates contain rich metadata that is extremely valuable for passive reconnaissance. Every certificate presented by a server is a public document and can be examined without any authentication.
+
+#### Reading Certificate Information
+
+**Using command-line tools:**
+
+```bash
+# Get certificate from server
+openssl s_client -connect targetco.com:443 -servername targetco.com < /dev/null 2>/dev/null | \
+openssl x509 -noout -text
+
+# Extract just the key fields
+openssl s_client -connect targetco.com:443 < /dev/null 2>/dev/null | \
+openssl x509 -noout -subject -issuer -dates -fingerprint -ext subjectAltName
+
+# Output example:
+subject=CN=targetco.com, O=Target Company Inc., L=San Francisco, ST=California, C=US
+issuer=CN=DigiCert TLS RSA SHA256 2020 CA1, O=DigiCert Inc, C=US
+notBefore=Jan  1 00:00:00 2024 GMT
+notAfter=Dec 31 23:59:59 2024 GMT
+SHA256 Fingerprint=AA:BB:CC:DD:EE:FF:...
+X509v3 Subject Alternative Name:
+    DNS:targetco.com
+    DNS:www.targetco.com
+    DNS:api.targetco.com
+    DNS:auth.targetco.com
+    DNS:mail.targetco.com
+    DNS:dev.targetco.com
+    DNS:staging.targetco.com
+    DNS:internal-wiki.targetco.com   ← INTERNAL SYSTEM EXPOSED!
+    DNS:jira.targetco.com
+    DNS:confluence.targetco.com
+    DNS:gitlab.targetco.com
+```
+
+**Intelligence from this single certificate:**
+
+1. **Organization:** "Target Company Inc." — confirms organization name
+2. **Location:** San Francisco, California, USA — physical location confirmation
+3. **CA:** DigiCert — enterprise-grade certificate provider
+4. **Validity period:** Full year certificate (common in enterprise)
+5. **All subdomains (SAN list):**
+   - `api.targetco.com` — API endpoint exists
+   - `auth.targetco.com` — Authentication service (SSO? OAuth? SAML?)
+   - `dev.targetco.com` — Development environment externally exposed
+   - `staging.targetco.com` — Staging environment externally exposed
+   - `internal-wiki.targetco.com` — CRITICAL: Internal wiki publicly accessible
+   - `jira.targetco.com` — Jira project management
+   - `confluence.targetco.com` — Confluence wiki
+   - `gitlab.targetco.com` — Internal GitLab instance
+
+This single certificate reveals an entire secondary set of attack targets.
+
+#### Certificate Transparency (CT) Log Mining
+
+Certificate Transparency is a public audit trail for SSL certificates. Every certificate issued by a publicly trusted CA is logged to append-only CT logs, and these logs are permanently accessible.
+
+**Why CT logs provide passive historical intelligence:**
+
+1. Every certificate ever issued for a domain is logged — even expired ones
+2. Reveals subdomains that existed in the past (even if the DNS records are now gone)
+3. Shows when the organization changed certificate providers
+4. Reveals internal project names in historically issued certificates
+5. Shows wildcard vs. specific subdomain certificate usage patterns
+
+**CT Log Tools:**
+
+```bash
+# crt.sh — Primary public CT search interface
+curl 'https://crt.sh/?q=%.targetco.com&output=json' 2>/dev/null | \
+python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+domains = set()
+for cert in data:
+    names = cert.get('name_value', '').split('\n')
+    for name in names:
+        name = name.strip().lstrip('*.')
+        if name:
+            domains.add(name)
+for d in sorted(domains):
+    print(d)
+" | sort -u > ct_subdomains.txt
+
+# Certspotter
+curl "https://api.certspotter.com/v1/issuances?domain=targetco.com&include_subdomains=true&expand=dns_names" \
+-H "Authorization: Bearer YOUR_TOKEN" | python3 -m json.tool
+
+# Facebook CT Monitoring
+curl "https://graph.facebook.com/certificates?query=targetco.com&fields=domains,issuer_name,not_before,not_after"
+```
+
+**Analyzing CT History for Intelligence:**
+
+```
+Historical certificates for targetco.com:
+
+2015: *.targetco.com (wildcard) — old infrastructure approach
+2018: targetco.com, www.targetco.com, api.targetco.com — legacy structure
+2020: includes dev.targetco.com — development environment appears
+2021: includes vpn.targetco.com — VPN service added
+2022: includes staging.targetco.com, qa.targetco.com — test environments
+2023: internal-wiki.targetco.com DISAPPEARS from certificate — removed? still running?
+2024: current certificate as analyzed above
+
+Insight: dev, staging, and qa environments have existed since 2020-2022 and likely 
+still run legacy software from when they were first deployed.
+```
+
+#### Certificate Analysis Tools
+
+| Tool | Purpose | URL/Command |
+|------|---------|------------|
+| **SSL Labs** | Comprehensive TLS analysis with grade | https://www.ssllabs.com/ssltest/ |
+| **crt.sh** | CT log search | https://crt.sh |
+| **Censys** | Certificate search, host analysis | https://search.censys.io |
+| **Observatory by Mozilla** | TLS, headers, security analysis | https://observatory.mozilla.org |
+| **testssl.sh** | Command-line TLS testing | `testssl.sh targetco.com` |
+| **cert-parse** | Extract SANs from certificates | `openssl s_client ... | openssl x509 -text` |
+| **tlsx** | Fast TLS scanning | `tlsx -u targetco.com -san -cn` |
+
+```bash
+# tlsx — Modern, fast TLS reconnaissance
+tlsx -u targetco.com -san -cn -resp -p 443,8443
+tlsx -list domains.txt -san -json -o tls_results.json
+```
+
+---
+
+### 3.1.15 Company Reputation and Security Posture
+
+Assessing a target organization's public security reputation and posture provides context for the assessment and reveals historical vulnerabilities, threat actor attention, and security program maturity.
+
+#### Threat Intelligence Platforms
+
+**VirusTotal**
+
+VirusTotal aggregates results from 70+ antivirus engines and URL/file scanners. It is valuable for:
+
+```bash
+# Check domain reputation
+curl "https://www.virustotal.com/api/v3/domains/targetco.com" \
+-H "x-apikey: YOUR_KEY"
+
+# Check IP reputation
+curl "https://www.virustotal.com/api/v3/ip_addresses/203.0.113.50" \
+-H "x-apikey: YOUR_KEY"
+```
+
+**Intelligence gathered:**
+- Malicious URL reports (has the domain served malware?)
+- Phishing reports (has the domain been used in phishing?)
+- Malware downloads (has the domain distributed malware?)
+- Associated files (malware samples communicating with the IP)
+- Community comments (security researcher observations)
+
+A domain with a history of malware distribution may indicate previous compromise or insider threat activity — both critical pre-assessment intelligence.
+
+**Shodan (Reputation/History):**
+
+Beyond its scanning capabilities (covered in 3.1.21), Shodan maintains historical data on every IP's service history:
+- What ports were open in the past
+- What software versions were running
+- When services appeared and disappeared
+
+**Censys:**
+
+Similar to Shodan, Censys regularly scans the entire Internet's IPv4 address space.
+
+```bash
+# Censys search for organization
+curl "https://search.censys.io/api/v2/hosts/search" \
+-H "Authorization: Basic $(echo -n 'ID:SECRET' | base64)" \
+-d '{"q": "autonomous_system.organization: \"Target Company Inc.\"", "per_page": 100}'
+```
+
+**AlienVault OTX (Open Threat Exchange):**
+
+```bash
+# Check IP in threat intelligence database
+curl "https://otx.alienvault.com/api/v1/indicators/IPv4/203.0.113.50/general" \
+-H "X-OTX-API-KEY: YOUR_KEY"
+
+# Check domain
+curl "https://otx.alienvault.com/api/v1/indicators/domain/targetco.com/general" \
+-H "X-OTX-API-KEY: YOUR_KEY"
+```
+
+**Intelligence gathered:** 
+- Pulse reports (threat actor activity associated with the IP/domain)
+- Reputation score
+- Associated malware families
+- Geographic threat context
+
+#### Paste Sites and Dark Web Monitoring
+
+**Pastebin and Public Paste Sites:**
+
+Attackers and insiders frequently post stolen data or tools to public paste sites:
+
+```bash
+# Search paste sites for target-related content
+# Manual search:
+site:pastebin.com "targetco.com"
+site:paste.ee "targetco.com"
+site:ghostbin.com "targetco.com"
+site:hastebin.com "targetco.com"
+site:controlc.com "targetco.com"
+
+# Automated tool
+pastehunter --query "targetco.com" --output /tmp/paste_results.json
+```
+
+#### Public Vulnerability Databases
+
+**CVE Correlation:**
+
+Once technology stack is identified (from job listings, SSL cert analysis, etc.), cross-reference against CVE databases:
+
+```bash
+# Search NVD for vendor vulnerabilities
+curl "https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=Apache+Tomcat+9.0.41"
+
+# Shodan CVE search
+shodan search "org:\"Target Company\" vuln:cve-2021-44228"   # Log4Shell
+
+# Search Exploit-DB for public exploits
+searchsploit apache tomcat 9.0.41
+searchsploit --json apache tomcat | python3 -m json.tool
+```
+
+#### Bug Bounty Program Analysis
+
+Checking whether the target has a public bug bounty program reveals:
+- What scope they consider important (scope defines what they want tested)
+- What has already been found by bug bounty hunters
+- The organization's security program maturity
+- Types of vulnerabilities that have been paid out (suggesting they exist)
+
+```bash
+# Bug bounty programs
+# HackerOne: https://hackerone.com/directory/programs
+# Bugcrowd: https://bugcrowd.com/programs
+# Intigriti: https://www.intigriti.com/programs
+
+# Search for target's program
+site:hackerone.com "Target Company"
+site:bugcrowd.com "Target Company"
+```
+
+**Public Disclosure Analysis:**
+
+Bug bounty platforms publish disclosed vulnerability reports after patching. Search for disclosures related to the target:
+
+```bash
+site:hackerone.com/reports "targetco.com"
+site:hackerone.com/reports "Target Company"
+```
+
+Disclosed reports reveal:
+- Types of vulnerabilities that have been found historically
+- Specific applications and APIs that have had vulnerabilities
+- The organization's patch response speed
+- Vulnerability classes the security team may have blind spots for
+
+---
+
+### 3.1.16 File Metadata
+
+Files published on an organization's website contain embedded metadata that can expose sensitive information about the organization's internal infrastructure, personnel, and software versions.
+
+#### What is File Metadata?
+
+File metadata is data embedded within a file that describes the file itself. Users creating and publishing files typically are unaware of the metadata their files contain.
+
+**Types of metadata by file format:**
+
+| File Type | Metadata Format | What It Contains |
+|-----------|----------------|-----------------|
+| PDF | XMP, Dublin Core, Application-specific | Author, software, company, internal paths, modification history |
+| Word (.docx) | Office Open XML metadata | Author, company, last modified by, document history, template path |
+| Excel (.xlsx) | Office Open XML metadata | Author, company, username, formula history |
+| PowerPoint (.pptx) | Office Open XML metadata | Presentation author, company, internal links |
+| JPEG/PNG | EXIF | GPS coordinates, camera model, date/time, software |
+| TIFF | EXIF + IPTC | Same as JPEG plus additional photo metadata |
+| MP4/Video | Various | Creation software, GPS, encoding software |
+
+#### What Metadata Reveals to Penetration Testers
+
+**From PDF and Office Documents:**
+
+```
+PDF Metadata Analysis: TargetCo_Q3_2024_Report.pdf
+
+Author: john.smith
+Creator: Microsoft Word 2016
+Producer: Adobe Acrobat Pro DC 2023.006.20360
+CreationDate: 2024-09-15T14:32:11+00:00
+ModDate: 2024-09-18T09:15:33+00:00
+Title: Q3 2024 Financial Results
+Subject: Investor Relations
+Keywords: financial, quarterly, results
+Company: Target Company Inc.
+
+Template: C:\Users\j.smith\AppData\Roaming\Microsoft\Templates\TC_Corporate_Template.dotx
+          ↑ Internal Windows username revealed: j.smith
+          ↑ Internal path structure revealed: C:\Users\j.smith\AppData...
+          ↑ Template server path may reveal file server naming convention
+
+Last Modified By: Jane Doe
+Previous Author: Robert Johnson
+
+Comments in document: 
+[Internal Note - TO BE REMOVED]: The Q3 numbers exclude the data breach costs pending legal review
+```
+
+**Intelligence extracted:**
+- Username: `j.smith` → likely email `j.smith@targetco.com`
+- Internal path reveals Windows workstation structure
+- Software versions: Word 2016 → potentially vulnerable to specific exploits
+- Adobe Acrobat version: Specific version can be checked against CVE database
+- Document history reveals additional employee names (Robert Johnson, Jane Doe)
+- The comment "TO BE REMOVED" reveals sensitive business information
+
+**From JPEG/Image EXIF Data:**
+
+```bash
+# Extract EXIF from an image
+exiftool office_photo.jpg
+
+# Output:
+File Name                      : office_photo.jpg
+File Size                      : 4.2 MB
+File Modification Date/Time    : 2024:03:15 14:30:22
+Make                           : Apple
+Camera Model Name              : iPhone 14 Pro
+Software                       : 17.2.1
+Date/Time Original             : 2024:03:15 09:15:44
+GPS Latitude                   : 37° 47' 22.40" N    ← EXACT LOCATION
+GPS Longitude                  : 122° 25' 10.20" W   ← EXACT LOCATION
+GPS Altitude                   : 45.3 m Above Sea Level
+GPS Speed                      : 0 km/h (stationary)
+```
+
+GPS coordinates from a photo taken inside an office building reveal:
+- Precise physical address of the office
+- Floor-level precision (altitude data)
+- Confirmation of office location for physical penetration testing planning
+
+#### Metadata Extraction Tools
+
+**FOCA (Fingerprinting Organizations with Collected Archives)**
+
+FOCA is specifically designed for extracting and analyzing metadata from documents found during penetration testing reconnaissance. It:
+- Automatically finds documents published on a target website
+- Downloads documents from Google, Bing, and DuckDuckGo
+- Extracts metadata from all found documents
+- Aggregates usernames, software versions, email addresses, and internal paths
+- Builds a visual map of internal server names and usernames
+
+**Website:** https://github.com/ElevenPaths/FOCA (Windows)
+
+**Process:**
+1. Enter target domain
+2. FOCA searches Google/Bing for documents (.pdf, .docx, .xlsx, .pptx, .txt)
+3. Downloads all found documents
+4. Extracts metadata from each document
+5. Displays aggregated intelligence: usernames, software, printers, servers
+
+**ExifTool**
+
+The most comprehensive metadata extraction tool — supports 200+ file formats.
+
+```bash
+# Install
+sudo apt install libimage-exiftool-perl
+# or
+brew install exiftool
+
+# Basic extraction
+exiftool document.pdf
+
+# Recursive extraction (all files in directory)
+exiftool -r /path/to/documents/
+
+# Extract specific fields
+exiftool -Author -Creator -Software document.pdf
+
+# Extract GPS from image and convert to decimal degrees
+exiftool -GPSLatitude -GPSLongitude -GPSAltitude -n photo.jpg
+
+# Output as JSON
+exiftool -json document.pdf
+
+# Bulk process and output CSV
+exiftool -csv *.pdf > metadata_results.csv
+
+# Remove all metadata (defensive use)
+exiftool -All= -overwrite_original document.pdf
+```
+
+**metagoofil**
+
+Searches Google for target domain documents and extracts metadata:
+
+```bash
+# Install
+pip3 install metagoofil
+
+# Basic usage
+metagoofil -d targetco.com -t pdf,doc,xls,ppt,odp,ods,docx,xlsx,pptx -l 100 -o /tmp/metagoofil_output
+
+# Options:
+# -d: target domain
+# -t: file types to search
+# -l: limit to N results per file type
+# -o: output directory
+```
+
+**mat2 (Metadata Anonymisation Toolkit)**
+
+```bash
+# Install
+pip3 install mat2
+
+# Extract metadata
+mat2 --show document.pdf
+
+# Remove metadata (defensive)
+mat2 --inplace document.pdf
+```
+
+#### The Metadata Intelligence Workflow
+
+**Professional metadata reconnaissance process:**
+
+```bash
+#!/bin/bash
+# Automated document metadata extraction
+
+DOMAIN="targetco.com"
+OUTPUT_DIR="/tmp/metadata_recon"
+mkdir -p $OUTPUT_DIR/docs $OUTPUT_DIR/images
+
+# Step 1: Download documents from target website
+wget --recursive --level=2 --accept "*.pdf,*.docx,*.xlsx,*.pptx,*.doc,*.xls,*.ppt" \
+     --directory-prefix=$OUTPUT_DIR/docs \
+     "https://$DOMAIN"
+
+# Also search Google for cached documents (use metagoofil)
+metagoofil -d $DOMAIN -t pdf,docx,xlsx,pptx -l 50 -o $OUTPUT_DIR/docs
+
+# Step 2: Extract metadata from all found documents
+exiftool -csv -r $OUTPUT_DIR/docs > $OUTPUT_DIR/all_metadata.csv
+
+# Step 3: Extract unique usernames
+grep -i "author\|creator\|last.modified" $OUTPUT_DIR/all_metadata.csv | \
+awk -F',' '{print $2}' | sort -u > $OUTPUT_DIR/usernames.txt
+
+# Step 4: Extract software versions
+grep -i "producer\|creator.tool\|software" $OUTPUT_DIR/all_metadata.csv | \
+awk -F',' '{print $2}' | sort -u > $OUTPUT_DIR/software_versions.txt
+
+echo "Metadata extraction complete."
+echo "Usernames found: $(wc -l < $OUTPUT_DIR/usernames.txt)"
+echo "Software versions: $(wc -l < $OUTPUT_DIR/software_versions.txt)"
+```
+
+---
+
+### 3.1.17 Web Archiving, Caching, and Public Code Repositories
+
+#### The Wayback Machine — Internet Archive
+
+**Website:** https://web.archive.org/  
+**Operated by:** Internet Archive (non-profit)  
+**Coverage:** Over 800 billion web pages archived since 1996
+
+The Wayback Machine stores historical snapshots of websites and is one of the most powerful passive reconnaissance resources because it reveals:
+
+**1. Content no longer on the live site:**
+- Removed pages that contained sensitive information
+- Old employee directories (with names, phone numbers, emails)
+- Discontinued products or services
+- Former technology partners (revealing integrations)
+- Old contact pages with direct employee emails
+- Outdated documentation revealing architecture
+
+**2. Historical technology stack:**
+- Old `robots.txt` files revealing admin paths
+- Former CMS or platform (may still be running on subdomains)
+- Source code comments with internal references
+- JavaScript files revealing API endpoints
+
+**3. Behavioral analysis:**
+- How frequently the site was updated
+- When major technology migrations occurred
+- Timeline of organizational changes
+
+**Using the Wayback Machine:**
+
+```bash
+# Wayback Machine API
+# Get all snapshots for a URL
+curl "https://archive.org/wayback/available?url=targetco.com"
+
+# Get all saved URLs for a domain (CDX API)
+curl "https://web.archive.org/cdx/search/cdx?url=*.targetco.com/*&output=text&fl=original&collapse=urlkey&limit=10000" \
+> wayback_urls.txt
+
+# Filter for interesting file types
+grep -E "\.(php|asp|aspx|jsp|py|rb|txt|bak|sql|env|config|log)$" wayback_urls.txt
+
+# Tool: waybackurls
+waybackurls targetco.com | tee /tmp/wayback_urls.txt
+
+# Tool: gau (getallurls) — combines Wayback, CommonCrawl, and VirusTotal
+gau targetco.com | tee /tmp/gau_urls.txt
+
+# Look for interesting paths in historical URLs
+cat /tmp/wayback_urls.txt | grep -E "(admin|config|backup|test|dev|api|internal|login|password|credential)"
+```
+
+**High-Value Wayback Machine Findings:**
+
+```
+Historical URLs discovered for targetco.com:
+https://targetco.com/admin/phpMyAdmin/  ← Database admin interface (removed from live site)
+https://targetco.com/backup/            ← Backup directory (no longer live)
+https://targetco.com/wp-admin/          ← WordPress admin (site no longer uses WP but old files may exist)
+https://targetco.com/test/              ← Test environment once publicly accessible
+https://targetco.com/api/v1/            ← Old API version (may still be active but undocumented)
+```
+
+These historical paths should be tested against the live site — web servers frequently retain files and directories even when they are removed from the primary navigation.
+
+#### Google Cache
+
+Google maintains cached copies of indexed web pages. While less comprehensive than the Wayback Machine, Google Cache is more recent.
+
+```bash
+# Access Google's cached version of a page
+cache:targetco.com/employees
+cache:www.targetco.com/contact
+
+# Search for cached version of a specific page
+# site:google.com/search?q=cache:targetco.com/page
+```
+
+#### Common Crawl
+
+Common Crawl maintains petabyte-scale archives of web pages and makes them freely available:
+
+```bash
+# Search Common Crawl index
+curl "https://index.commoncrawl.org/CC-MAIN-2024-04-index?url=*.targetco.com/*&output=json" | \
+head -100 | python3 -m json.tool
+```
+
+#### Public Code Repositories — Beyond GitHub
+
+**GitHub (Primary)**
+- Largest code repository hosting platform
+- High probability of finding target-related code
+- Covered comprehensively in Section 3.1.11
+
+**GitLab (Public Instances)**
+```bash
+site:gitlab.com "targetco"
+site:gitlab.com "targetco.com"
+```
+
+**Bitbucket**
+```bash
+site:bitbucket.org "targetco"
+```
+
+**SourceForge**
+Older open source projects may be hosted here:
+```bash
+site:sourceforge.net "targetco"
+```
+
+**npm (Node Package Manager)**
+
+JavaScript developers frequently publish packages to npm that contain internal organizational references:
+
+```bash
+# Search npm for organization-related packages
+curl "https://registry.npmjs.org/-/v1/search?text=targetco&size=50"
+
+# Examine package.json files in found packages for:
+# - Internal API URLs
+# - Organization names
+# - Developer email addresses
+# - Internal tool dependencies
+```
+
+**PyPI (Python Package Index)**
+
+```bash
+# Search PyPI for organization-related packages
+curl "https://pypi.org/pypi/targetco-sdk/json"
+```
+
+**Docker Hub**
+
+Docker images often contain:
+- Application configurations
+- Environment variable templates
+- Internal tool references
+- Default credentials (a significant security risk)
+
+```bash
+# Search Docker Hub for organization images
+curl "https://hub.docker.com/v2/search/repositories/?query=targetco"
+
+# Pull and examine layers of a public image (active — use with caution)
+docker pull targetco/public-app
+docker history targetco/public-app
+docker inspect targetco/public-app
+```
+
+#### robots.txt and sitemap.xml
+
+These files are designed to guide search engine crawlers but inadvertently reveal application structure.
+
+**robots.txt:**
+
+```bash
+curl https://targetco.com/robots.txt
+
+# Example output:
+User-agent: *
+Disallow: /admin/
+Disallow: /internal/
+Disallow: /api/v2/
+Disallow: /staging/
+Disallow: /backup/
+Disallow: /config/
+Disallow: /phpMyAdmin/
+Disallow: /wp-admin/
+Sitemap: https://www.targetco.com/sitemap.xml
+```
+
+Every `Disallow` entry is a path the organization does NOT want crawled — which is exactly the list of paths most interesting to a penetration tester.
+
+**sitemap.xml:**
+
+```bash
+curl https://targetco.com/sitemap.xml
+
+# May reveal:
+# - Complete URL structure of the website
+# - API documentation pages
+# - Admin functionality pages
+# - Application module names
+```
+
+---
+
+### 3.1.18 Finding Out About the Organization — Aggregation Techniques
+
+At this stage of passive reconnaissance, the goal is to aggregate all collected intelligence into a coherent, actionable intelligence picture. This synthesis phase is what separates basic reconnaissance from professional intelligence analysis.
+
+#### Intelligence Aggregation Framework
+
+**The Target Intelligence Report Structure:**
+
+```
+=== PASSIVE RECONNAISSANCE REPORT: TARGET COMPANY INC. ===
+Engagement: [Engagement Reference]
+Date: [Date]
+Analyst: [Name]
+Classification: CONFIDENTIAL — Client Eyes Only
+
+1. ORGANIZATIONAL OVERVIEW
+   1.1 Corporate Structure
+   1.2 Key Personnel
+   1.3 Physical Locations
+   1.4 Business Lines and Products
+
+2. TECHNICAL INFRASTRUCTURE
+   2.1 Domain Portfolio
+   2.2 IP Address Space and ASN
+   2.3 External Facing Services
+   2.4 Cloud Services Identified
+   2.5 Technology Stack
+
+3. EMAIL AND COMMUNICATION INFRASTRUCTURE
+   3.1 Email Provider
+   3.2 Email Security Posture (SPF/DKIM/DMARC)
+   3.3 Confirmed Email Addresses
+
+4. PERSONNEL INTELLIGENCE
+   4.1 Key Technical Personnel
+   4.2 Security Team Members
+   4.3 Email Format
+   4.4 Social Engineering Attack Vectors
+
+5. EXPOSURE INTELLIGENCE
+   5.1 Breach History
+   5.2 Leaked Credentials
+   5.3 Reputation Assessment
+   5.4 Dark Web Presence
+
+6. HISTORICAL INTELLIGENCE
+   6.1 Legacy Systems and Paths
+   6.2 Technology Transitions
+   6.3 Historical IP Addresses
+
+7. VULNERABILITY INDICATORS
+   7.1 SSL/TLS Weaknesses
+   7.2 Subdomain Takeover Candidates
+   7.3 Shadow IT Identified
+   7.4 Unmanaged Assets
+
+8. ATTACK SURFACE MAP
+   8.1 Priority Targets (High)
+   8.2 Priority Targets (Medium)
+   8.3 Social Engineering Targets
+```
+
+#### Organizational Intelligence Sources
+
+**Annual Reports and Investor Relations:**
+
+Public companies publish annual reports (10-K in the US) that contain:
+- Detailed business unit descriptions
+- Risk factors (explicitly naming IT dependencies and security risks)
+- Employee count by region
+- Subsidiary and acquisition information
+- IT spending disclosures
+- Named executive officers
+
+```bash
+# SEC EDGAR for US public company filings
+curl "https://efts.sec.gov/LATEST/search-index?q=%22Target+Company%22&dateRange=custom&startdt=2023-01-01&enddt=2024-12-31&forms=10-K"
+```
+
+**Press Releases and News:**
+
+```bash
+# Search news archives
+site:prnewswire.com "Target Company"
+site:businesswire.com "Target Company"
+site:globenewswire.com "Target Company"
+
+# Google News
+site:news.google.com "Target Company" technology
+```
+
+**Conference Presentations and Academic Papers:**
+
+Employees frequently present at conferences (RSA, DEF CON, Black Hat, AWS re:Invent) revealing:
+- Specific technologies and architectures
+- Security challenges and solutions implemented
+- Vendor relationships
+
+```bash
+# Search for conference presentations
+site:slideshare.net "Target Company" 2023
+site:speakerdeck.com "Target Company"
+"Target Company" site:youtube.com conference presentation 2024
+```
+
+---
+
+### 3.1.19 Advanced Searches — Google Dorking and Beyond
+
+Google Dorking (also known as Google Hacking) uses advanced Google search operators to find information that is technically public but not easily discovered through normal search.
+
+#### Google Search Operators — Complete Reference
+
+| Operator | Syntax | Example | Use Case |
+|----------|--------|---------|---------|
+| `site:` | `site:domain.com` | `site:targetco.com filetype:pdf` | Search within specific domain |
+| `filetype:` | `filetype:ext` | `site:targetco.com filetype:xlsx` | Find specific file types |
+| `intitle:` | `intitle:keyword` | `intitle:"index of" site:targetco.com` | Pages with keyword in title |
+| `inurl:` | `inurl:keyword` | `inurl:admin site:targetco.com` | Pages with keyword in URL |
+| `intext:` | `intext:keyword` | `intext:"confidential" site:targetco.com` | Pages with keyword in body |
+| `cache:` | `cache:url` | `cache:targetco.com/employees` | Google's cached version |
+| `link:` | `link:url` | `link:targetco.com` | Pages linking to target |
+| `related:` | `related:url` | `related:targetco.com` | Websites similar to target |
+| `"..."` | `"exact phrase"` | `"Target Company" "database password"` | Exact phrase match |
+| `-` | `-keyword` | `site:targetco.com -www` | Exclude keyword |
+| `*` | `*` | `"targetco * password"` | Wildcard |
+| `OR` / `\|` | `term1 OR term2` | `"targetco.com" password OR credential` | Boolean OR |
+| `AND` | `term1 AND term2` | `site:targetco.com AND intext:password` | Boolean AND |
+| `before:` | `before:YYYY-MM-DD` | `site:targetco.com before:2020-01-01` | Results before date |
+| `after:` | `after:YYYY-MM-DD` | `site:targetco.com after:2023-01-01` | Results after date |
+| `numrange:` | `numrange:N-M` | `targetco.com numrange:1-65535` | Numeric range |
+
+#### The Google Hacking Database (GHDB)
+
+The GHDB, maintained by Exploit-DB, contains thousands of tested Google dorks organized by category. Every serious penetration tester references the GHDB regularly.
+
+**Website:** https://www.exploit-db.com/google-hacking-database
+
+**GHDB Categories:**
+- Footholds (login portals, admin interfaces)
+- Files Containing Usernames
+- Sensitive Directories
+- Web Server Detection
+- Vulnerable Files
+- Vulnerable Servers
+- Error Messages
+- Files Containing Juicy Info
+- Files Containing Passwords
+- Sensitive Online Shopping Info
+- Network or Vulnerability Data
+- Pages Containing Login Portals
+- Various Online Devices
+
+#### High-Value Google Dorks for Penetration Testing
+
+**Finding Login Portals:**
+```
+site:targetco.com intitle:"login"
+site:targetco.com intitle:"sign in"
+site:targetco.com inurl:"/login"
+site:targetco.com inurl:"/admin"
+site:targetco.com inurl:"/portal"
+site:targetco.com inurl:"/wp-admin"
+site:targetco.com inurl:"/cpanel"
+site:targetco.com inurl:"/webmail"
+site:targetco.com inurl:"/owa"   # Outlook Web Access
+site:targetco.com inurl:"/citrix"
+site:targetco.com inurl:"/vpn"
+site:targetco.com inurl:"/remote"
+site:targetco.com inurl:"/sslvpn"
+```
+
+**Finding Exposed Files:**
+```
+site:targetco.com filetype:pdf
+site:targetco.com filetype:docx
+site:targetco.com filetype:xlsx "confidential"
+site:targetco.com filetype:txt "password"
+site:targetco.com filetype:log
+site:targetco.com filetype:bak   # Backup files
+site:targetco.com filetype:sql   # Database dumps
+site:targetco.com filetype:conf  # Configuration files
+site:targetco.com filetype:config
+site:targetco.com filetype:env   # Environment files
+site:targetco.com filetype:xml inurl:config
+site:targetco.com filetype:yml   # YAML config files
+site:targetco.com filetype:json  # JSON config files (often API keys)
+site:targetco.com filetype:ini   # Windows config files
+site:targetco.com filetype:php inurl:config
+```
+
+**Finding Sensitive Information:**
+```
+site:targetco.com "index of /"
+site:targetco.com "parent directory"
+site:targetco.com intitle:"index of" passwd
+site:targetco.com intitle:"index of" ".htpasswd"
+site:targetco.com "powered by" inurl:admin
+site:targetco.com intext:"sql syntax near"   # SQL error messages
+site:targetco.com intext:"MySQL server version"  # MySQL errors
+site:targetco.com intext:"Warning: mysql_fetch_array()"  # PHP MySQL errors
+site:targetco.com intext:"ORA-00933"   # Oracle errors
+site:targetco.com intext:"Traceback (most recent call last)"  # Python errors
+site:targetco.com "Exception Details" "Stack Trace"  # .NET exceptions
+site:targetco.com "JDBC" "SQLException"   # Java database errors
+```
+
+**Finding Exposed Credentials:**
+```
+site:targetco.com "password" filetype:txt
+site:targetco.com "pwd=" filetype:txt
+"@targetco.com" "password"   # Searching all of web for org email + password
+"@targetco.com" filetype:xls "password"  # Spreadsheets with passwords
+site:github.com "targetco.com" "password"
+site:github.com "targetco.com" "api_key"
+site:github.com "targetco.com" "secret"
+site:pastebin.com "targetco.com"
+```
+
+**Finding Network Equipment and Infrastructure:**
+```
+site:targetco.com intitle:"router"
+site:targetco.com intitle:"cisco" "login"
+site:targetco.com intitle:"FortiGate"
+site:targetco.com intitle:"NetScreen"
+site:targetco.com intitle:"SonicWALL"
+site:targetco.com intitle:"pfSense"
+site:targetco.com "Cisco Systems" intitle:"login"
+```
+
+**Finding Exposed Development Environments:**
+```
+site:targetco.com inurl:dev
+site:targetco.com inurl:staging
+site:targetco.com inurl:test
+site:targetco.com inurl:qa
+site:targetco.com inurl:uat   # User Acceptance Testing
+site:targetco.com inurl:demo
+site:targetco.com inurl:beta
+```
+
+**Finding Remote Access:**
+```
+site:targetco.com inurl:"/remote" intitle:"Remote Desktop"
+site:targetco.com intitle:"Citrix Gateway"
+site:targetco.com intitle:"SSL VPN"
+site:targetco.com inurl:"/RDWeb"  # Remote Desktop Web Access
+site:targetco.com intitle:"VMware Horizon"  # VMware VDI
+```
+
+#### Beyond Google — Other Search Engine Dorking
+
+**Bing Dorks:**
+
+Bing sometimes indexes content that Google does not, particularly from newer or smaller sites.
+
+```
+site:targetco.com filetype:pdf
+ip:203.0.113.50   # Bing: all pages on this IP (no Google equivalent)
+```
+
+**DuckDuckGo:**
+```
+site:targetco.com inurl:admin
+# DuckDuckGo also has a Bing-powered index with slightly different coverage
+```
+
+**Yandex (for Russian and Eastern European targets):**
+```
+site:targetco.ru
+host:targetco.ru
+```
+
+---
+
+### 3.1.20 Open-Source Intelligence (OSINT) Gathering — Frameworks and Automation
+
+This section consolidates the methodology, frameworks, and advanced automation tools used by senior penetration testers and intelligence analysts for comprehensive OSINT campaigns.
+
+#### The OSINT Framework in Practice
+
+**Website:** https://osintframework.com/  
+
+The OSINT Framework is not just a list of tools — it is a structured intelligence methodology translated into an interactive reference. Professional use of OSINT Framework involves:
+
+**Step 1: Identify starting data points**
+- Organization name
+- Domain name
+- IP address
+- Email address
+- Employee names
+- Phone numbers
+
+**Step 2: Navigate to appropriate branch**
+For each data point, navigate to the corresponding OSINT Framework branch and systematically execute relevant tools.
+
+**Step 3: Document and pivot**
+Record all findings. Each new piece of intelligence becomes a new starting point for additional queries.
+
+**Complete OSINT Framework Branches Relevant to Penetration Testing:**
+
+```
+OSINT Framework
+├── Domain Name
+│   ├── WHOIS Records → DomainTools, ViewDNS
+│   ├── Subdomains → crt.sh, Subfinder, Amass
+│   ├── DNS Records → SecurityTrails, DNSdumpster
+│   ├── Website → WaybackMachine, BuiltWith, Wappalyzer
+│   └── Email Addresses → Hunter.io, theHarvester
+│
+├── Email Address
+│   ├── Email Reputation → MXToolbox
+│   ├── Breach Data → HaveIBeenPwned, Dehashed
+│   ├── Email Headers → MXHeaders
+│   └── Social Networks linked to email
+│
+├── IP Address
+│   ├── Geolocation → MaxMind, ip-api.com
+│   ├── Hosting Provider → ARIN WHOIS
+│   ├── Open Ports → Shodan, Censys
+│   ├── Reverse DNS → ViewDNS
+│   └── Blacklists → MXToolbox Blacklist Check
+│
+├── Username
+│   ├── Social Networks → Sherlock, WhatsMyName
+│   ├── Forum Search
+│   └── Gaming Profiles
+│
+├── Person
+│   ├── Public Records → Spokeo, Intelius
+│   ├── Social Networks → LinkedIn, Twitter, Facebook
+│   ├── Email Search → Hunter.io
+│   ├── Photo Search → Google Images
+│   └── Phone Numbers → Twilio Lookup
+│
+└── Organization
+    ├── Official Records → LinkedIn Company Page, SEC EDGAR
+    ├── Job Listings → LinkedIn Jobs, Indeed, Glassdoor
+    ├── Financials → OpenCorporates, Companies House
+    ├── Employees → LinkedIn Employee Search
+    └── Technology → BuiltWith, Wappalyzer, job listings
+```
+
+#### OSINT Combine Advanced Workflows
+
+**Website:** https://www.osintcombine.com/
+
+**Key OSINT Combine tools for professional use:**
+
+**1. Social Media Search (Cross-Platform Username Investigation)**
+
+When a username or email is discovered, OSINT Combine provides an efficient cross-platform search capability without requiring separate manual searches on each platform.
+
+**2. Reverse Image Search**
+
+Critical for verifying identities and finding additional accounts associated with a face:
+- Confirm that a LinkedIn profile photo matches other profiles (verifying identity)
+- Find additional social media accounts using the same profile photo
+- Detect fake LinkedIn profiles (using stock photos)
+
+**3. Map Searching — Geolocation OSINT**
+
+Tools for extracting and verifying geographic information from images and social media posts:
+- Extract GPS coordinates from image EXIF data
+- Cross-reference GPS coordinates with satellite imagery
+- Verify office building locations for physical penetration testing
+
+**4. Domain Investigation Batch Processing**
+
+When multiple domains are discovered (from CT logs, WHOIS, job listings), OSINT Combine enables bulk processing.
+
+#### SMART — Advanced Usage
+
+**Website:** https://smart.myosint.training/
+
+**Professional SMART workflows:**
+
+When encountering an unusual intelligence requirement (e.g., "find corporate registration records for a subsidiary in Singapore"), SMART quickly surfaces specialized databases and tools that would otherwise require extensive research:
+
+```
+SMART Search: "corporate registry singapore"
+Results: 
+- ACRA (Accounting and Corporate Regulatory Authority of Singapore)
+- Singapore Business Database
+- ASEAN OSINT resources
+- Regional investigative journalism databases
+```
+
+This makes SMART particularly valuable for:
+- Country-specific reconnaissance
+- Specialized industry databases (maritime, aviation, telecommunications)
+- Non-English language resources
+
+#### SpiderFoot HX — Cloud-Automated OSINT
+
+**Website:** https://www.spiderfoot.net/hx/
+
+SpiderFoot HX is the commercial, cloud-hosted version of SpiderFoot. Advantages over self-hosted:
+- No infrastructure to manage
+- Pre-configured API keys for major data sources
+- Team collaboration features
+- Automated scheduled scans for continuous monitoring
+- Historical scan comparison (track changes in target's attack surface)
+
+**Use case:** Many professional penetration testing firms run SpiderFoot HX as a continuous monitoring service for clients between annual penetration tests, alerting on new assets, subdomain additions, and credential exposures.
+
+#### Building Automated OSINT Pipelines
+
+Senior penetration testers build automated pipelines that chain multiple tools together:
+
+```bash
+#!/bin/bash
+# Professional Passive OSINT Pipeline
+# Run from Kali Linux with all tools installed
+
+DOMAIN="targetco.com"
+ORG="Target Company Inc."
+OUTPUT="/tmp/osint_${DOMAIN}_$(date +%Y%m%d)"
+mkdir -p $OUTPUT
+
+echo "[Phase 1] DNS Intelligence"
+# Subdomains from Certificate Transparency
+subfinder -d $DOMAIN -all -recursive -o $OUTPUT/subdomains_subfinder.txt
+amass enum -passive -d $DOMAIN -o $OUTPUT/subdomains_amass.txt
+
+# DNS records
+dig $DOMAIN ANY +short > $OUTPUT/dns_any.txt
+dig $DOMAIN MX +short > $OUTPUT/dns_mx.txt
+dig $DOMAIN TXT +short > $OUTPUT/dns_txt.txt
+dig _dmarc.$DOMAIN TXT +short > $OUTPUT/dmarc.txt
+
+echo "[Phase 2] Historical Intelligence"
+# Wayback Machine URLs
+waybackurls $DOMAIN > $OUTPUT/wayback_urls.txt
+gau $DOMAIN > $OUTPUT/gau_urls.txt
+
+echo "[Phase 3] Email and Personnel"
+# Email harvesting
+theHarvester -d $DOMAIN -b all -l 500 -f $OUTPUT/theharvester.html
+
+# Subdomain resolution
+cat $OUTPUT/subdomains_subfinder.txt $OUTPUT/subdomains_amass.txt | sort -u > $OUTPUT/all_subdomains.txt
+dnsx -l $OUTPUT/all_subdomains.txt -o $OUTPUT/resolved_subdomains.txt
+
+echo "[Phase 4] SSL Certificate Analysis"
+# Certificate transparency mining
+curl "https://crt.sh/?q=%.${DOMAIN}&output=json" 2>/dev/null | \
+python3 -c "import json,sys; [print(e.get('name_value','')) for e in json.load(sys.stdin)]" | \
+sort -u > $OUTPUT/ct_subdomains.txt
+
+echo "[Phase 5] OSINT Aggregation"
+# Combine all discovered subdomains
+cat $OUTPUT/subdomains_subfinder.txt \
+    $OUTPUT/subdomains_amass.txt \
+    $OUTPUT/ct_subdomains.txt | \
+    sort -u > $OUTPUT/MASTER_subdomains.txt
+
+echo "Pipeline complete. Results: $OUTPUT"
+echo "Total subdomains discovered: $(wc -l < $OUTPUT/MASTER_subdomains.txt)"
+```
+
+---
+
+### 3.1.21 Shodan — The Search Engine for Everything Connected
+
+**Website:** https://www.shodan.io/  
+**Type:** Internet-connected device search engine  
+**Cost:** Free (limited), Freelancer ($59/month), Small Business ($299/month), Corporate (custom)  
+**Created by:** John Matherly (2009)
+
+Shodan is one of the most powerful passive reconnaissance tools in existence. Unlike Google, which indexes website content, Shodan continuously scans the entire Internet and indexes the **service banners** — the metadata returned by servers when a connection is made.
+
+This means Shodan knows:
+- Every IP address with an open port on the Internet
+- What software is running on each port (with version numbers)
+- SSL certificate details
+- Geographic location and ISP of every device
+- Historical data going back years
+
+#### What Shodan Indexes
+
+Shodan does not wait for you to search — it continuously probes every IP address on the Internet across hundreds of ports and stores what each service returns:
+
+```
+Shodan Banner Example for a Web Server:
+HTTP/1.1 200 OK
+Server: Apache/2.4.41 (Ubuntu)
+X-Powered-By: PHP/7.4.3
+Content-Type: text/html
+Date: Sun, 01 Jan 2024 12:00:00 GMT
+```
+
+This banner tells Shodan (and therefore any searcher):
+- Operating system: Ubuntu
+- Web server: Apache 2.4.41 (specific vulnerability-checkable version)
+- PHP version: 7.4.3 (end-of-life — no security patches)
+
+Shodan indexing covers:
+- HTTP (80, 8080, 8443, 8888, etc.)
+- HTTPS (443)
+- SSH (22)
+- FTP (21)
+- Telnet (23)
+- SMB (445)
+- RDP (3389)
+- VNC (5900-5901)
+- SNMP (161)
+- DNS (53)
+- SMTP/IMAP/POP3 (25, 143, 110)
+- Database ports (3306 MySQL, 5432 PostgreSQL, 1433 MSSQL, 27017 MongoDB)
+- Industrial control systems (Modbus 502, DNP3 20000, EtherNet/IP 44818)
+- IoT devices (cameras, printers, routers, NAS)
+- Kubernetes API (6443, 8001)
+- Docker API (2375, 2376)
+- Elasticsearch (9200, 9300)
+- Redis (6379)
+- memcached (11211)
+- Cassandra (9042)
+
+#### Shodan Search Syntax
+
+**Basic Searches:**
+
+```
+# Search for services belonging to an organization
+org:"Target Company Inc."
+
+# Search for services on a specific IP
+ip:203.0.113.50
+
+# Search for services in an IP range
+net:203.0.113.0/24
+
+# Search for services on a specific hostname
+hostname:targetco.com
+
+# Search for services in a country
+country:US org:"Target Company"
+
+# Search for specific ports
+org:"Target Company" port:3389   # RDP exposed
+org:"Target Company" port:22     # SSH exposed
+org:"Target Company" port:23     # Telnet (critical finding)
+org:"Target Company" port:445    # SMB
+org:"Target Company" port:3306   # MySQL
+
+# Search for specific products/technologies
+org:"Target Company" product:"Apache httpd"
+org:"Target Company" product:"nginx"
+org:"Target Company" product:"Microsoft IIS"
+org:"Target Company" product:"OpenSSH"
+org:"Target Company" product:"MySQL"
+```
+
+**Advanced Filters:**
+
+```
+# Find specific software versions
+org:"Target Company" product:"Apache httpd" version:"2.4.41"
+
+# Find SSL certificate information
+ssl.cert.subject.CN:"targetco.com"
+ssl.cert.subject.O:"Target Company Inc."
+
+# Find by SSL certificate expiry (expired certs)
+ssl.cert.expired:true org:"Target Company"
+
+# Find devices with specific vulnerabilities (Shodan CVE search)
+org:"Target Company" vuln:CVE-2021-44228   # Log4Shell
+org:"Target Company" vuln:CVE-2021-26855   # ProxyLogon (Exchange)
+org:"Target Company" vuln:CVE-2019-19781   # Citrix Netscaler
+
+# Find industrial control systems
+org:"Target Company" port:502   # Modbus
+org:"Target Company" port:44818  # EtherNet/IP (Rockwell PLC)
+
+# Find default credentials still in use (content in banner)
+org:"Target Company" "default password"
+org:"Target Company" http.title:"admin" http.status:200
+
+# Find specific web technologies
+org:"Target Company" http.component:"WordPress"
+org:"Target Company" http.component:"Joomla"
+org:"Target Company" http.component:"Drupal"
+org:"Target Company" http.component:"Tomcat"
+
+# Find cloud storage open to public
+org:"Target Company" http.title:"Index of /"
+```
+
+**Shodan Dorks (High-Value Search Patterns):**
+
+```
+# Exposed databases
+org:"Target Company" product:"MongoDB" -authentication
+org:"Target Company" port:9200 product:"Elastic"
+org:"Target Company" port:6379 product:"Redis"
+org:"Target Company" port:27017
+
+# Remote desktop and management
+org:"Target Company" port:3389 product:"Remote Desktop Protocol"
+org:"Target Company" port:5900 product:"VNC"
+org:"Target Company" has_screenshot:true port:3389   # Screenshots of exposed RDP logins
+
+# Printers
+org:"Target Company" port:9100 product:"Jetdirect"
+org:"Target Company" http.title:"Printer"
+
+# Network devices
+org:"Target Company" port:161 product:"SNMP"   # SNMP (community string exposure)
+org:"Target Company" http.title:"Cisco" port:443
+
+# VPN gateways
+org:"Target Company" product:"Fortinet SSL VPN"
+org:"Target Company" product:"Palo Alto Networks"
+org:"Target Company" product:"Pulse Secure"
+org:"Target Company" product:"Citrix"
+
+# Building management and IoT
+org:"Target Company" product:"BACnet"
+org:"Target Company" port:47808
+```
+
+#### Shodan CLI Tool
+
+```bash
+# Install Shodan CLI
+pip3 install shodan
+
+# Initialize with API key
+shodan init YOUR_API_KEY
+
+# Basic search
+shodan search 'org:"Target Company Inc."'
+
+# Show all services for an IP
+shodan host 203.0.113.50
+
+# Count results
+shodan count 'org:"Target Company Inc."'
+
+# Download results
+shodan download --limit 1000 targetco_results 'org:"Target Company Inc."'
+shodan parse --fields ip_str,port,transport,product,version targetco_results.json.gz
+
+# Alert on new services (monitoring)
+shodan alert create "Target Company Monitor" --ip 203.0.113.0/24
+
+# Show alerts
+shodan alert list
+```
+
+#### Shodan for Vulnerability Prioritization
+
+One of Shodan's most powerful features is the **CVE Search** — identifying known vulnerabilities in discovered systems:
+
+```bash
+# Search for Log4Shell vulnerable systems (CVE-2021-44228)
+shodan search 'org:"Target Company" vuln:CVE-2021-44228'
+
+# Example result showing organization's vulnerable systems
+203.0.113.50    80/tcp   Apache Tomcat 9.0.37 [CVE-2021-44228]
+203.0.113.51    8080/tcp Apache Tomcat 8.5.51 [CVE-2021-44228]
+```
+
+This is intelligence that goes directly into the exploitation phase — during active testing, these systems are immediate high-priority targets.
+
+#### Shodan's Screenshotting Feature
+
+Shodan captures screenshots of visual services (RDP, VNC, web interfaces) when they are discovered. This allows passive viewing of:
+- Windows RDP login screens (revealing Windows version and computer name)
+- VNC remote desktop sessions (occasionally displaying active sessions)
+- Web-based control panels and administrative interfaces
+- Industrial HMI (Human-Machine Interface) screens
+
+```bash
+# Find systems with screenshots
+shodan search 'org:"Target Company" has_screenshot:true'
+
+# View screenshots in Shodan web interface
+# https://www.shodan.io/search?query=org%3A%22Target+Company%22+has_screenshot%3Atrue
+```
+
+#### Censys — Shodan Alternative
+
+Censys is a comparable tool to Shodan with some distinct advantages:
+
+```bash
+# Censys CLI
+pip3 install censys
+
+# Search hosts
+censys search 'organization.name="Target Company Inc."' --index-type HOSTS
+
+# Search certificates
+censys search 'parsed.subject.organization="Target Company Inc."' --index-type CERTS
+
+# Detailed host information
+censys view HOSTS 203.0.113.50
+```
+
+**Shodan vs. Censys comparison:**
+
+| Feature | Shodan | Censys |
+|---------|--------|--------|
+| Scan frequency | Continuous | Continuous |
+| Protocol coverage | Very broad | Broad |
+| Historical data | Yes | Yes |
+| Certificate search | Yes | Excellent (dedicated index) |
+| Free tier | Yes (limited) | Yes (limited) |
+| Vulnerability data | CVE tagging | CVE tagging |
+| Screenshot capture | Yes | Limited |
+| IoT/OT focus | Strong | Moderate |
+| ASN search | Yes | Yes |
+
+---
+
+### 3.1.22 Breach Data Intelligence — Leaked Credentials and Exposure Monitoring
+
+Breach intelligence is one of the most immediately actionable categories of passive reconnaissance data. Discovering that an organization's employees have passwords in public breach databases provides a direct credential stuffing attack vector.
+
+#### Understanding the Breach Data Ecosystem
+
+Every major data breach eventually results in the stolen data being traded, sold, and ultimately made public in various forums, paste sites, and dedicated breach databases. The timeline typically follows:
+
+```
+Breach Occurs
+    ↓ (Days to months)
+Data sold on dark web markets (private, expensive)
+    ↓ (Months to years)
+Data traded in hacker forums (semi-private)
+    ↓ (Months to years)
+Data aggregated and indexed (public, searchable)
+    ↓ (Current state)
+Data accessible via breach intelligence services
+```
+
+#### Have I Been Pwned (HIBP)
+
+**Website:** https://haveibeenpwned.com/  
+**Created by:** Troy Hunt (Microsoft Regional Director, security researcher)  
+**Data:** 12+ billion records from 600+ breaches
+
+HIBP is the most respected and widely used breach notification service. It provides:
+
+**For email addresses:**
+- Which breaches an email address appears in
+- What data was exposed (password, phone number, physical address, etc.)
+- Paste sites where the email appears
+
+**For domains (enterprise use):**
+- Domain-level search: all compromised email addresses @targetco.com
+- API access for bulk lookups
+
+```bash
+# HIBP API for domain search
+curl "https://haveibeenpwned.com/api/v3/breacheddomain/targetco.com" \
+-H "hibp-api-key: YOUR_API_KEY" \
+-H "user-agent: MyPentestApp"
+
+# Check single email
+curl "https://haveibeenpwned.com/api/v3/breachedaccount/j.smith@targetco.com" \
+-H "hibp-api-key: YOUR_API_KEY" \
+-H "user-agent: MyPentestApp"
+
+# Response
+[
+  {
+    "Name": "LinkedIn",
+    "BreachDate": "2012-05-05",
+    "Description": "LinkedIn breach of 2012 affecting 164 million accounts",
+    "DataClasses": ["Email addresses", "Passwords"]
+  },
+  {
+    "Name": "Adobe",
+    "BreachDate": "2013-10-04",
+    "Description": "Adobe breach affecting 152 million accounts",
+    "DataClasses": ["Email addresses", "Password hints", "Passwords", "Usernames"]
+  }
+]
+```
+
+**Intelligence derived from HIBP results:**
+
+If 40% of Target Company's employees have been in breaches where passwords were exposed, this reveals:
+- High likelihood of password reuse across corporate and personal accounts
+- Historical password patterns (enabling targeted password guessing)
+- Specific employee email addresses are confirmed active
+- Breach recency (2012 LinkedIn breach → 12-year-old password likely still reused)
+
+#### F-Secure Identity Checker
+
+**Website:** https://www.f-secure.com/en/home/free-tools/identity-checker  
+F-Secure provides a consumer-facing breach checking tool that uses their own breach intelligence database. As a cybersecurity company, F-Secure has access to breach data not in HIBP.
+
+**Professional relevance:** 
+- Use alongside HIBP for broader coverage
+- Can confirm exposure not in HIBP's dataset
+
+#### HackNotice
+
+**Website:** https://hacknotice.com/  
+**Type:** Breach monitoring and notification service
+
+HackNotice provides breach intelligence with a focus on:
+- Dark web monitoring for organization data
+- Real-time breach alerts
+- Industry-specific breach tracking
+- Employee exposure assessment
+
+**Professional use:** HackNotice is typically used as part of a threat intelligence subscription for continuous monitoring rather than point-in-time penetration test reconnaissance.
+
+#### BreachDirectory
+
+**Website:** https://breachdirectory.com/  
+**Type:** Breach data search with partial password hash exposure
+
+BreachDirectory provides search capability across breach data and, notably, can show **partial password hashes** — allowing confirmation that a password exists in breach data without exposing the full hash.
+
+```bash
+# BreachDirectory API
+curl "https://breachdirectory.com/api/?func=auto&term=j.smith@targetco.com" \
+-H "x-api-key: YOUR_KEY"
+
+# Response includes partial SHA-1 hash
+{
+  "success": true,
+  "result": [
+    {
+      "email": "j.smith@targetco.com",
+      "sha1": "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+    }
+  ]
+}
+```
+
+The SHA-1 hash can then be looked up in hash databases to recover the plaintext password.
+
+#### Keeper Security
+
+**Website:** https://keepersecurity.com/  
+**Type:** Password manager and breach monitoring platform
+
+Keeper Security's enterprise product includes:
+- **BreachWatch:** Monitors the dark web for employee credential exposure
+- **Event Reporting:** Tracks credential-related security events
+- **Compliance Reporting:** Generates compliance reports for breached account remediation
+
+**Relevance to penetration testing:** Keeper's breach monitoring features inform the penetration tester about the sophistication of the client's credential hygiene program. If the client uses BreachWatch and still has many exposed credentials, it indicates employees are not responding to breach notifications.
+
+#### WhatBreach
+
+**GitHub:** https://github.com/Ekultek/WhatBreach  
+**Type:** Open-source breach data aggregation tool  
+**Created by:** Ekultek
+
+WhatBreach is a command-line tool that checks emails against multiple breach databases simultaneously:
+
+```bash
+# Install
+git clone https://github.com/Ekultek/WhatBreach
+cd WhatBreach
+pip3 install -r requirements.txt
+
+# Single email check
+python3 whatbreach.py -e j.smith@targetco.com
+
+# Multiple emails from file
+python3 whatbreach.py -l email_list.txt
+
+# Output
+[+] Email: j.smith@targetco.com
+[*] Found in 3 breaches:
+    - LinkedIn (2012): Email, Password
+    - Adobe (2013): Email, Password Hint, Username
+    - MyFitnessPal (2018): Email, IP Address, Username
+
+[*] Checking pastes...
+[+] Found on 2 paste sites:
+    - Pastebin: https://pastebin.com/AbCdEfGh
+    - Ghostbin: https://ghostbin.com/paste/XyZaBc
+```
+
+#### LeakLooker
+
+**GitHub:** https://github.com/woj-ciech/LeakLooker  
+**Type:** Tool for finding exposed databases and files  
+**Platform:** Python
+
+LeakLooker searches Shodan and other sources for exposed and potentially breached data sources, including:
+- Exposed MongoDB databases (no authentication)
+- Exposed Elasticsearch clusters
+- Exposed CouchDB instances
+- Exposed files in cloud storage
+
+```bash
+# Install
+git clone https://github.com/woj-ciech/LeakLooker
+cd LeakLooker
+pip3 install -r requirements.txt
+
+# Search for exposed databases belonging to target
+python3 leaklooker.py -s --target targetco.com
+
+# Search Shodan for exposed databases in target's IP range
+python3 leaklooker.py --shodan --query 'net:203.0.113.0/24'
+```
+
+**Why LeakLooker matters:**
+
+Many organizations have accidentally exposed databases to the public Internet:
+- MongoDB with no authentication (common misconfiguration)
+- Elasticsearch with no authentication (extremely common)
+- Redis with no authentication and no bind restriction
+- Cassandra with no authentication
+
+Discovering these during passive reconnaissance (via Shodan data) is a critical finding that can be reported as a severe vulnerability even before active testing begins.
+
+#### Buster
+
+**GitHub:** https://github.com/sham00n/buster  
+**Type:** Email to social profile aggregation tool
+
+Buster takes an email address and finds associated accounts on other platforms:
+
+```bash
+# Install
+git clone https://github.com/sham00n/buster
+cd buster
+pip3 install -r requirements.txt
+
+# Search for accounts associated with an email
+python3 buster.py -e j.smith@targetco.com
+
+# Output
+[+] Searching for: j.smith@targetco.com
+[*] Results:
+    - Gravatar: Profile found (avatar reveals face photo)
+    - Github: username jsmith-dev (public repositories found)
+    - GitLab: username jsmith (repositories found)
+    - Disqus: Comments found (reveals opinions and interests)
+    - About.me: Personal page found
+```
+
+**Intelligence value:**
+- GitHub username → access to their public repositories → potential code disclosure
+- Personal website → technology preferences, skills, contact information
+- Gravatar → profile photo (for identity verification in social engineering)
+
+#### Scavenger
+
+**GitHub:** https://github.com/rndinfosecguy/Scavenger  
+**Type:** OSINT tool for finding breach data from dark web sources
+
+Scavenger aggregates data from dark web sources, IRC channels, and paste sites to find exposed credentials:
+
+```bash
+# Install
+git clone https://github.com/rndinfosecguy/Scavenger
+cd Scavenger
+pip3 install -r requirements.txt
+
+# Configure API keys in config.py
+# Run search
+python3 scavenger.py -s j.smith@targetco.com
+```
+
+#### PwnDB
+
+**GitHub:** https://github.com/davidtavarez/pwndb  
+**Type:** Tool for querying the PwnDB Tor-hidden service for leaked credentials
+
+PwnDB is a dark web database of leaked credentials. The pwndb tool provides a command-line interface for querying it:
+
+```bash
+# Install
+git clone https://github.com/davidtavarez/pwndb
+cd pwndb
+pip3 install -r requirements.txt
+
+# Requires Tor running locally
+sudo service tor start
+
+# Query for email
+python3 pwndb.py --target j.smith@targetco.com
+
+# Query for domain (finds all @targetco.com exposures)
+python3 pwndb.py --target targetco.com
+```
+
+**Important note:** PwnDB queries a Tor-based service and returns plaintext or partially-recovered passwords. This intelligence must be handled in accordance with the engagement's legal agreements and data protection obligations.
+
+#### Credential Stuffing — The Attack Chain
+
+Once breach data is identified, the attack chain is:
+
+```
+1. Identify breached @targetco.com email addresses (HIBP, pwndb, etc.)
+         ↓
+2. Obtain associated password hashes from breach databases
+         ↓
+3. Crack password hashes (offline, using hashcat/John the Ripper)
+         ↓
+4. Test recovered plaintext passwords against corporate systems:
+   - Microsoft 365 login (outlook.office365.com)
+   - Corporate VPN login
+   - Citrix Gateway
+   - Web application login
+         ↓
+5. Successful authentication = confirmed credential reuse vulnerability
+   (Password Spraying: test one password across many accounts to avoid lockouts)
+```
+
+**Password Spraying in the authorization context:**
+
+Password spraying uses a single common password against many accounts, avoiding account lockout:
+
+```bash
+# Only perform after authorization is granted (ACTIVE reconnaissance)
+# Tools used in active phase:
+# - Spray
+# - MSOLSpray (Microsoft 365)
+# - GoMapEnum
+# - TREVORspray
+# - CredKing (Lambda-based spray for IP rotation)
+```
+
+#### Dehashed
+
+**Website:** https://dehashed.com/  
+**Type:** Commercial breach intelligence database with comprehensive credential search
+
+Dehashed is a paid service that provides access to one of the largest breach databases, enabling:
+- Email to password search
+- Username to password search
+- IP address to credential search
+- Domain-wide breach analysis
+
+```bash
+# Dehashed API
+curl "https://api.dehashed.com/search?query=domain:targetco.com&size=100" \
+-H "Authorization: Basic $(echo -n 'email@example.com:API_KEY' | base64)"
+```
+
+#### The Complete Breach Intelligence Workflow
+
+```
+Step 1: Collect all @targetco.com email addresses
+  └── Sources: theHarvester, Hunter.io, LinkedIn (via CrossLinked), 
+              HIBP domain search, CT log-derived email formats
+
+Step 2: Check all emails against breach databases
+  └── Tools: HIBP API, WhatBreach, pwndb, Dehashed
+
+Step 3: Identify accounts with exposed passwords
+  └── Prioritize by:
+      - Recency of breach (more recent = less likely changed)
+      - Number of breaches (multiple breaches = likely password reuser)
+      - Seniority of account holder (admin accounts are highest priority)
+      - Role (IT admins, security team, finance are high-value)
+
+Step 4: Attempt to recover plaintext passwords
+  └── Hashcat, John the Ripper against recovered hashes
+  └── Online lookup services for unsalted MD5/SHA1
+
+Step 5: Prepare credential list for active testing phase
+  └── Organize by target (VPN, webmail, application)
+  └── Document for inclusion in pre-engagement intelligence report
+```
+
+---
+
+*— Sections 3.0 and 3.1 complete. Continuing with Sections 3.2 through 3.5 in the following module segment. —*
+
+---
