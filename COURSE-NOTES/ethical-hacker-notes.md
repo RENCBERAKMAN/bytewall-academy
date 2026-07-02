@@ -6347,6 +6347,1534 @@ Step 5: Prepare credential list for active testing phase
 
 ---
 
-*— Sections 3.0 and 3.1 complete. Continuing with Sections 3.2 through 3.5 in the following module segment. —*
+# Module 3 — Section 3.2: Performing Active Reconnaissance
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**
+> *Professional Reference Guide — GitHub Edition*
+> *Written to build real understanding, not just tool familiarity.*
+
+---
+
+## Table of Contents
+
+- [3.2.1 Overview — What Active Reconnaissance Really Means](#321-overview--what-active-reconnaissance-really-means)
+- [3.2.2 Nmap Scan Types — The Deep Dive](#322-nmap-scan-types--the-deep-dive)
+- [3.2.3 Practice — Nmap in a Real Engagement Context](#323-practice--nmap-in-a-real-engagement-context)
+- [3.2.4 Types of Enumeration — Extracting Intelligence from Open Ports](#324-types-of-enumeration--extracting-intelligence-from-open-ports)
+- [3.2.5 Enumeration via Packet Crafting with Scapy](#325-enumeration-via-packet-crafting-with-scapy)
+- [3.2.6 Lab Reference — Enumeration with Nmap](#326-lab-reference--enumeration-with-nmap)
+- [3.2.7 Packet Inspection and Eavesdropping](#327-packet-inspection-and-eavesdropping)
+- [3.2.8 Practice — Packet Inspection in a Real Scenario](#328-practice--packet-inspection-in-a-real-scenario)
+- [3.2.9 Packet Crafting with Scapy — Full Professional Reference](#329-packet-crafting-with-scapy--full-professional-reference)
+- [3.2.10 Network Sniffing with Wireshark — The Complete Guide](#3210-network-sniffing-with-wireshark--the-complete-guide)
+
+---
+
+## 3.2.1 Overview — What Active Reconnaissance Really Means
+
+### The Moment Everything Changes
+
+There is a very clear line in a penetration testing engagement. Before that line, everything you do is invisible to the target — you are reading public records, browsing archived websites, looking at job listings. You leave no trace, you generate no alerts, and you are at zero legal risk. That is passive reconnaissance.
+
+The moment you cross into active reconnaissance, everything changes. You send packets. Those packets arrive at real machines. Those machines log the connection. Firewalls potentially block and alert on the traffic. Intrusion detection systems start correlating what they see. The target's defenders, if they are watching, now have evidence that someone is probing their network.
+
+This is why the signed authorization document — the Rules of Engagement — is not just a formality. It is the legal instrument that transforms what would be a criminal offense into legitimate, contracted security work. A penetration tester who begins active reconnaissance before the contract is signed is not an ethical hacker. They are committing an offense under the Computer Fraud and Abuse Act in the United States, the Computer Misuse Act in the United Kingdom, and equivalent laws in virtually every other jurisdiction.
+
+So active reconnaissance starts the moment both parties have signed off and the testing window has opened — not a minute earlier.
+
+### What Makes Active Reconnaissance Valuable
+
+Think about what passive reconnaissance gives you. You have learned from LinkedIn that the company uses AWS, has a Kubernetes infrastructure team, and recently posted a job for a "Senior Microsoft 365 Administrator." You found some subdomains via certificate transparency logs. You checked their DNS records and discovered they use Microsoft 365 for email. This is valuable — but it is secondhand information. It tells you what the company claims or appears to have, not what is actually running and accessible right now.
+
+Active reconnaissance answers the question that matters most in a penetration test: **what is actually exposed and reachable at this moment?**
+
+A company might have decommissioned a server six months ago but still have it in their DNS records because nobody updated the documentation. Active reconnaissance reveals it is gone — the IP does not respond. Conversely, that same company might have a test server that was stood up last week, never documented anywhere publicly, but actively listening on port 8080 with default credentials. Passive reconnaissance will never find it. An active scan of their IP range will.
+
+This is the power of active reconnaissance: it shows you the real attack surface, not the documented or intended one.
+
+### The Pixel Paradise Network — Understanding Your Target
+
+In the Protego / Pixel Paradise engagement scenario, the network contains a rich mix of device types:
+
+**User endpoints** include desktops, laptops, mobile devices, and gaming consoles. From a penetration testing perspective, these are interesting because they run user-side software (browsers, email clients, productivity tools) and often have weaker configurations than servers. They are also the primary target of social engineering and client-side attacks.
+
+**Facilities endpoints** include surveillance cameras, alarm systems, climate control sensors, lighting systems, and VoIP phones. This category — often called Operational Technology (OT) or IoT in enterprise environments — is enormously significant in modern penetration testing. These devices frequently run embedded operating systems, have no patching mechanism, use default credentials, and communicate over unencrypted protocols. A security camera on the same network segment as a database server is not just a surveillance device — it is a potential pivot point.
+
+**Intermediary devices** are routers and switches. Compromising a router gives visibility into all traffic flowing through it and often allows traffic manipulation. Switches, particularly managed switches, can be exploited through VLAN hopping and ARP poisoning techniques.
+
+**Wireless access points** provide Wi-Fi. The security of the wireless authentication mechanism (WPA2-PSK, WPA2-Enterprise, WPA3) determines how difficult it is to gain network access without a wired connection.
+
+**Firewalls** protect the perimeter and potentially segment internal networks. Understanding how a firewall is configured — what it allows, what it blocks, and whether it performs stateful inspection — fundamentally shapes the attack strategy.
+
+Active reconnaissance maps all of these devices systematically.
+
+### The Active Reconnaissance Methodology
+
+Active reconnaissance is not random scanning. Professional practitioners follow a structured methodology that builds intelligence layer by layer:
+
+The first step is **host discovery** — determining which IP addresses in the target range have live hosts. There is no point scanning 65,535 ports on every address in a /16 network (65,534 IP addresses) when perhaps only 200 of those addresses actually have devices on them. Host discovery narrows the field before the intensive work begins.
+
+The second step is **port scanning** — for each live host, determining which TCP and UDP ports are in an open, closed, or filtered state. This tells you what services the device is offering to the network.
+
+The third step is **service and version detection** — determining not just that port 443 is open, but that it is running nginx 1.18.0 on Ubuntu 20.04. The specific version of every service is the direct input for vulnerability research.
+
+The fourth step is **OS detection** — identifying the operating system of each host, which narrows the attack surface further and informs lateral movement strategy.
+
+The fifth step is **enumeration** — for each discovered service, extracting detailed, service-specific intelligence. If you found SMB is running, enumeration extracts the list of shares, user accounts, and password policy. If SNMP is running, enumeration extracts the device's full configuration and connected network topology.
+
+Each step feeds the next, progressively building a complete picture of the target environment.
+
+---
+
+## 3.2.2 Nmap Scan Types — The Deep Dive
+
+### What Nmap Actually Is
+
+Nmap — Network Mapper — is the most widely used network reconnaissance tool in the world. It was created by Gordon Lyon (known online as Fyodor) in 1997 and published in Phrack Magazine Issue 51. Nearly three decades later, it remains the standard tool for network reconnaissance because it does its job extraordinarily well: it determines what is on a network, what those things are, and what they are running.
+
+But to understand Nmap deeply, you first need to understand the protocols it manipulates. You cannot use Nmap intelligently — choosing the right scan type for the right situation, interpreting results correctly, recognizing when a result might be a false positive — without understanding what is actually happening at the network level.
+
+### TCP — Transmission Control Protocol
+
+TCP is the protocol that the majority of internet applications depend on. When you load a website, send an email, or connect via SSH, you are using TCP. The reason TCP is so widely used comes down to one word: reliability.
+
+TCP is a **connection-oriented** protocol. Before any data is exchanged, the two parties (let us call them Client and Server) must establish a connection through a process called the **three-way handshake**. Think of it like a phone call: you dial (SYN), the other person picks up and says hello (SYN-ACK), and you acknowledge that you can hear them (ACK). Only then does the actual conversation begin.
+
+Each TCP packet carries flags in its header — small bits that indicate what type of packet this is and what the sender wants the receiver to do with it. The six classic flags are:
+
+**SYN (Synchronize)** — This flag says "I want to start a connection with you." It is the first packet in every new TCP connection.
+
+**ACK (Acknowledge)** — This flag says "I received your last packet." Almost every TCP packet after the initial SYN carries an ACK, because TCP guarantees delivery by requiring every packet to be acknowledged.
+
+**FIN (Finish)** — This flag says "I am done sending data and want to close this connection gracefully." Unlike RST, a FIN-based close allows the other side to finish sending whatever it still has to send before the connection terminates.
+
+**RST (Reset)** — This flag says "Abort this connection immediately." It is an emergency stop. When a server receives a connection request to a port where nothing is listening, it sends RST. When a security device detects a suspicious connection, it may inject RST packets to force the connection closed.
+
+**PSH (Push)** — This flag tells the receiving side to pass the data up to the application immediately rather than buffering it.
+
+**URG (Urgent)** — This flag indicates that part of the payload is urgent and should be processed before the rest.
+
+Understanding these flags is the foundation of understanding every Nmap scan type, because what Nmap does at its core is send specific combinations of these flags and interpret what comes back.
+
+### UDP — User Datagram Protocol
+
+UDP is TCP's simpler, faster, less reliable sibling. While TCP goes through the three-way handshake and guarantees delivery, UDP just sends packets and does not wait to confirm they arrived. This makes UDP faster and more efficient — which is why real-time applications like video streaming, online gaming, VoIP calls, and DNS queries use UDP. If you are in a video call and a packet gets lost, you do not want the video to pause while the system resends that packet — you just want to move on to the next frame. UDP enables that.
+
+For penetration testing, UDP matters enormously because UDP services are the most frequently overlooked and therefore often the least secured. Administrators focus their patching and monitoring efforts on TCP services. UDP services like SNMP (Simple Network Management Protocol), TFTP (Trivial File Transfer Protocol), and DNS often run with default configurations and weak security.
+
+### The Port State System
+
+Before diving into specific scan types, you need to understand what Nmap is actually trying to determine: the **state** of each port.
+
+A port is like a numbered door on a building. The building is the IP address. Each door (port number, 1 through 65535) can be in one of several states:
+
+An **open** port means a service is actively listening behind that door. If you knock (send a packet), someone answers. Port 443 being open on a web server means there is an HTTPS service ready to accept connections.
+
+A **closed** port means the door exists and the building is reachable, but nobody is listening behind that specific door. The building (host) is up, but this particular service is not running. The key behavior: a closed port responds to probes — it sends back a RST packet saying "nothing here."
+
+A **filtered** port is the most ambiguous state. Nmap sent a probe and received no response — but that does not mean the port is open. It might mean a firewall silently dropped the packet without sending any response. Nmap cannot distinguish between "open service that is not responding to this type of probe" and "firewall dropping packets" without additional evidence.
+
+An **unfiltered** port is specifically the ACK scan result — the port is accessible, but Nmap cannot determine from an ACK probe alone whether it is open or closed.
+
+The states **open|filtered** and **closed|filtered** represent Nmap's honest admission that it cannot determine the exact state with the probes it sent.
+
+---
+
+### The TCP Connect Scan (-sT)
+
+Imagine you are trying to determine whether a shop is open. The simplest approach is to walk up to the door, try the handle, and see if it opens. If it opens, the shop is open. If you get a "Sorry, We're Closed" sign, it is closed. If there is a security guard who stops you before you even reach the door, something is blocking you.
+
+The TCP Connect scan works exactly like this. It uses your operating system's built-in networking capability — specifically the `connect()` system call — to attempt a full, complete connection to each target port. It does not manipulate raw packets. It just asks the operating system: "Please connect to this IP address, this port number."
+
+The operating system performs the complete three-way handshake. If the handshake succeeds (the server sends SYN-ACK and the connection is established), the port is open. Nmap then immediately closes the connection with a RST and moves to the next port. If the target sends a RST during the handshake attempt, the port is closed. If no response comes after a timeout period, the port is filtered.
+
+**Why this matters:** Because it uses the OS networking stack rather than raw packets, the TCP Connect scan does not require administrative privileges. Anyone can run it. This makes it useful when you are testing from a machine where you do not have root or administrator access — perhaps you are testing from a standard user account on a company workstation, or from a cloud instance where your user lacks elevated privileges.
+
+**The significant drawback** is detectability. Because the scan completes full TCP connections, every service that receives a connection logs it. Apache logs it. Microsoft IIS logs it. sshd logs it. The MySQL daemon logs it. If a security analyst reviews server logs after a `-sT` scan, they will find a clear record of rapid sequential connections from the scanner's IP address.
+
+In a real engagement, you would use the TCP Connect scan when you literally have no choice — when you lack the privileges for a SYN scan. Otherwise, you almost always prefer the SYN scan for its speed and reduced logging footprint.
+
+---
+
+### The SYN Scan (-sS) — Understanding the "Stealth" Concept
+
+The SYN scan is Nmap's default scan type when run with root privileges, and it is the most commonly used scan type in professional penetration testing. To understand why, you need to understand one key insight about how logging works in network services.
+
+Most network services only create a log entry when a connection is successfully established — that is, when the three-way handshake has completed. The thinking is: why log connection attempts that never went anywhere? Only completed connections represent real sessions and real interactions.
+
+The SYN scan exploits this behavior. Instead of completing the three-way handshake, it sends just the initial SYN packet. If the target port is open, the server responds with SYN-ACK — saying "yes, I am ready to connect." But instead of completing the handshake with an ACK, Nmap immediately sends a RST — effectively saying "never mind, abort." The connection is torn down before it is ever fully established.
+
+The result: the target's service never sees a completed connection. In many older and simpler services, no log entry is created. The probe and its result (port open or closed) are determined entirely from the SYN-ACK or RST-ACK response to the initial SYN packet, without the handshake ever completing.
+
+This is why it is called a "half-open" scan — the connection is half-opened but never completed.
+
+The "stealth" label deserves an important caveat, though. Against modern enterprise defenses — a Palo Alto NGFW, a Suricata IDS, a Cisco FirePOWER — a SYN scan is not stealthy at all. These systems inspect every packet at the wire level, not just completed connections. They detect SYN scans within seconds based on the rate and pattern of SYN packets from a single source IP. The "stealth" in "stealth scan" refers to its behavior relative to simple, service-level logging — not to modern security infrastructure.
+
+In practical terms, SYN is preferred over TCP Connect because it is faster (no need to wait for handshake completion) and generates fewer log entries in service logs. Against sophisticated defenses, you need timing manipulation and evasion techniques on top of scan type selection.
+
+**Requires root or administrator privileges** because crafting raw TCP packets (sending a SYN and then an RST rather than a normal ACK) requires direct access to the network stack at a level that the operating system only grants to privileged users.
+
+---
+
+### The UDP Scan (-sU) — The Most Overlooked and Most Important
+
+UDP scanning is unglamorous, slow, and frustrating. It is also absolutely critical and frequently reveals the most interesting vulnerabilities on a network. There is a reason experienced penetration testers always run a UDP scan even when they are pressed for time.
+
+Here is the fundamental problem: UDP has no handshake. You send a UDP packet to a port. One of three things happens. First, the service running on that port receives the packet and sends a response — in which case you know the port is open. Second, nothing is running on that port, and the operating system sends back an ICMP "Port Unreachable" message — in which case you know the port is closed. Third, you receive nothing at all — which could mean the port is open but the service did not respond to your generic probe, or it could mean a firewall dropped the packet.
+
+This ambiguity is what makes UDP scanning slow. For many UDP ports, Nmap cannot send a generic probe and expect a response — it needs to send a protocol-specific probe. For DNS (port 53), it sends a DNS query. For SNMP (port 161), it sends an SNMP request. For TFTP (port 69), it sends a TFTP request. Without a protocol-appropriate probe, the service will not respond, and the port appears filtered even if it is actually wide open.
+
+On top of this, Linux and many other operating systems rate-limit the generation of ICMP Port Unreachable messages to prevent them from being used in denial-of-service attacks. If you are scanning a Linux host, it might generate at most one ICMP Port Unreachable per second. A full 65,535-port UDP scan against a Linux host will therefore take over 18 hours to complete if you are relying on ICMP responses to determine closed ports.
+
+This is why professional practice is to always limit UDP scans to the ports that matter most. The most valuable UDP services for penetration testing are:
+
+**SNMP on port 161** is arguably the most impactful UDP service to discover during active reconnaissance. SNMP (Simple Network Management Protocol) is used to monitor and manage network devices — routers, switches, firewalls, servers, printers — from a central management station. The protocol works by querying a database of management information called the MIB (Management Information Base). When accessed with the right community string (essentially a password), SNMP reveals the complete internal state of a device: every interface and its IP address, the routing table, every connected device it has ever communicated with (the ARP table), the list of running processes, installed software, CPU and memory utilization, and in the case of network devices, the complete configuration.
+
+The catch is that the two default community strings — "public" for read-only access and "private" for read-write access — are still in use across millions of devices worldwide because administrators never changed them. Finding SNMP open with the default "public" community string on a network device is one of the most impactful findings in a penetration test: it reveals the entire network topology instantly.
+
+**DNS on port 53** is present on every DNS server. Active DNS enumeration — which we cover in detail in the enumeration sections — can reveal zone information, internal hostnames, and occasionally enable zone transfers that dump the entire DNS database.
+
+**NTP on port 123** (Network Time Protocol) runs on virtually every networked device. NTP vulnerabilities are occasionally critical (notably NTP amplification attacks in DDoS contexts) but more relevantly, the NTP monlist command on older implementations can dump a list of the last 600 hosts that synchronized time with the server — effectively a list of active network hosts.
+
+**TFTP on port 69** (Trivial File Transfer Protocol) is used for network device configuration backups and OS image transfers. It has no authentication mechanism whatsoever. Finding a TFTP server during a penetration test is almost always a critical finding — TFTP servers frequently contain configuration backups of routers and switches, including their complete configurations with password hashes.
+
+---
+
+### The FIN Scan (-sF), NULL Scan (-sN), and Xmas Scan (-sX) — RFC Exploitation
+
+These three scan types belong to a family sometimes called "stealth scans" or "flag manipulation scans." To understand why they exist and what they do, you need to understand RFC 793 — the original specification for TCP published in 1981.
+
+RFC 793 defines how a TCP implementation should respond when it receives a packet that does not match any existing connection. The rule is:
+
+If a port is **closed** and receives any packet that does not have the RST flag set, the receiving system should send back a RST packet.
+
+If a port is **open** and receives a packet that does not have the SYN flag set (meaning it is not a legitimate connection initiation), the packet should simply be discarded — ignored entirely. The rationale is that a packet arriving at an open port without being part of a valid connection sequence is malformed or out of order, and the correct behavior is to ignore it.
+
+The FIN, NULL, and Xmas scans exploit this asymmetry. They send packets that have no valid role in a normal TCP connection to a closed port, they should get an RST back. To an open port, they should get nothing — the packet is discarded.
+
+The **FIN scan** sends a TCP packet with only the FIN flag set. Normally, FIN is sent to close an established connection. Sending FIN to a port with no established connection is technically illegal under TCP semantics.
+
+The **NULL scan** sends a TCP packet with no flags set at all — every flag bit is zero. This is the most illegal of all, since no valid TCP packet has all flags empty.
+
+The **Xmas scan** sends a TCP packet with FIN, PSH (Push), and URG (Urgent) all set simultaneously. The name comes from the image of a packet "lit up like a Christmas tree" with flags.
+
+**The critical limitation:** Microsoft Windows does not implement RFC 793's behavior for these anomalous packets. Windows sends RST in response to FIN, NULL, and Xmas probes regardless of whether the port is open or closed. This means these three scan types are fundamentally non-functional against Windows targets — every port appears closed. Against Linux, Unix, and BSD targets, they work as described.
+
+The practical value of these scans today is primarily in two scenarios. First, they can bypass very simple, stateless packet filters that only look for SYN packets as the indicator of new connections — a filter that blocks SYN packets might pass a FIN or NULL packet right through. Second, in certain compliance or forensic contexts, they provide evidence about a firewall's stateless versus stateful nature.
+
+---
+
+### The ACK Scan (-sA) — Not for Finding Open Ports
+
+The ACK scan is fundamentally different from everything discussed so far. It does not tell you whether ports are open or closed. Instead, it tells you which ports are **filtered** versus **unfiltered** — mapping the firewall's ruleset.
+
+When you send a TCP packet with only the ACK flag set to a target, you are sending a packet that looks like it belongs to an already-established connection. The target knows nothing about an existing connection, so it would normally respond with RST to both open and closed ports — because an unexpected ACK from an unknown connection should be rejected.
+
+A firewall is the variable. If a stateful firewall sees an ACK packet for a connection it has no record of, it drops the packet. If no firewall (or a stateless firewall) is in the path, the ACK reaches the host and gets a RST back.
+
+So: RST response means unfiltered. No response means filtered.
+
+By comparing SYN scan results (which ports are open) with ACK scan results (which ports are filtered), you can map the firewall's behavior precisely. A port that is open in the SYN scan but filtered in the ACK scan suggests a stateful firewall that tracks connections. A port that is filtered in both suggests a firewall blocking everything on that port. A port that is open in the SYN scan and unfiltered in the ACK scan suggests no firewall filtering on that port.
+
+This intelligence is used for firewall evasion strategy — specifically, it reveals whether a stateless or stateful firewall is in use and which ports are controlled by firewall rules versus host-based filtering.
+
+---
+
+### The Host Discovery Scan (-sn) — Finding Who Is Home
+
+Before scanning ports on every IP in a /16 network (65,534 addresses), you need to know which of those addresses actually have live devices. The host discovery scan — run with the `-sn` flag — does exactly this: it determines which IP addresses have responding hosts without performing any port scanning.
+
+On a **local network** (where the scanner and targets are on the same subnet), Nmap uses ARP (Address Resolution Protocol) requests when run as root. ARP operates at Layer 2 of the network model — below IP, below TCP, at the Ethernet level. An ARP request asks: "Which device on this local network has this IP address? Please tell me your MAC address."
+
+ARP requests bypass host-based firewalls entirely. A host running Windows Firewall with all rules set to block incoming connections still must respond to ARP requests — otherwise it cannot communicate on the network at all. If you are on the same subnet as your targets, ARP-based host discovery is essentially immune to firewall evasion attempts.
+
+The additional bonus: ARP responses include the target's MAC address, and the first three bytes of a MAC address are the OUI (Organizationally Unique Identifier) — a vendor code assigned by the IEEE. This means an ARP scan result tells you not just that a host is live, but what type of device it likely is. A MAC starting with `00:50:56` indicates a VMware virtual machine. `B8:27:EB` indicates a Raspberry Pi. `3C:D9:2B` indicates an HP device. This vendor identification is immediate intelligence about the nature of the discovered hosts.
+
+On a **remote network** (targets are across a router), ARP does not work — it is a local network protocol. Instead, Nmap uses a combination of techniques: ICMP echo requests (traditional ping), TCP SYN to port 443, TCP ACK to port 80, and ICMP timestamp requests. The logic is that even if a host blocks ICMP ping, it might respond to TCP connections on common ports. Using multiple probe types maximizes the probability of detecting live hosts even through partial filtering.
+
+In a professional engagement, host discovery is run first with speed prioritized — using parallel probes and fast timeouts. The output (a list of live IPs) is saved to a file, which then becomes the input for full port scanning.
+
+---
+
+### The Idle Scan (-sI) — True Anonymity in Port Scanning
+
+The Idle scan is one of the most sophisticated techniques in network security research. It allows a penetration tester to scan a target without the target ever seeing the scanner's IP address. Instead, all probes appear to originate from a third, unrelated host — called the "zombie."
+
+The technique relies on a subtle property of IP packets: each IP packet contains an **ID field** (IPID) — a number that is incremented for each packet a host sends. On some systems, particularly older ones, this counter increments predictably and globally — every packet the system sends, regardless of destination, increments the counter by one.
+
+The attack works as follows. First, the scanner sends a probe to the zombie to learn its current IPID value. Then, the scanner sends a SYN packet to the target but spoofs the source address — making it look like the packet came from the zombie. If the target port is open, it sends a SYN-ACK back to the zombie (thinking the zombie initiated the connection). The zombie, receiving an unexpected SYN-ACK, sends a RST back to the target — and increments its IPID counter. When the scanner checks the zombie's IPID again, it has gone up by two (once for the scanner's initial probe, once for the zombie's RST to the target). If the target port is closed, it sends RST to the zombie, the zombie ignores it, and the IPID only increases by one.
+
+The scanner never sends a single packet to the target from its own IP address. From the target's logs, only the zombie's IP appears. This technique is described in detail in Phrack Magazine and was a fundamental advance in network security research — it demonstrated that port scanning could be completely anonymous given the right conditions.
+
+Modern operating systems no longer use globally sequential IPIDs (they use per-connection sequences or random values), which makes finding suitable zombie hosts increasingly difficult. The technique remains important to understand because it illustrates a deep principle: protocol properties that appear benign in isolation can be exploited in combination to achieve something their designers never intended.
+
+---
+
+### Timing Options (-T0 through -T5) — Speed, Stealth, and the Art of the Tradeoff
+
+Every penetration test involves a fundamental tension between speed and stealth. Scanning quickly means generating traffic rapidly, which means security devices can detect a clear pattern. Scanning slowly means staying below detection thresholds but taking potentially days or weeks to complete.
+
+Nmap's timing templates are a high-level abstraction over a complex set of parameters that control how quickly probes are sent, how long to wait for responses, and how many probes to send in parallel.
+
+**Paranoid (-T0)** sends one probe every five minutes. To scan a thousand ports at this speed takes over three days. No time-based correlation system — no SIEM, no IDS — can detect this as a scan because the packets are so spread out in time that they appear to be normal, sporadic traffic. This is used in extraordinarily sensitive engagements where detection must be avoided at all costs, or in research contexts where patience is available.
+
+**Sneaky (-T1)** sends one probe every fifteen seconds. Still very slow, still effective at evading most time-based detection. A thousand-port scan takes around four hours.
+
+**Polite (-T2)** slows down enough to avoid saturating the target network with probe traffic. It is more about being considerate of network bandwidth than about evasion. Useful when scanning production environments where causing network slowdowns would be noticed as operational disruption rather than security events.
+
+**Normal (-T3)** is Nmap's default. It dynamically adjusts timing based on observed network conditions — if responses are coming back quickly, it sends probes faster; if there are timeouts, it slows down. A typical LAN scan completes in tens of seconds to a few minutes.
+
+**Aggressive (-T4)** assumes a fast, reliable network. It shortens timeouts and increases parallelism significantly. This is the timing most commonly used in internal network assessments on LAN environments, CTF competitions, and lab environments where speed matters and stealth is not a concern.
+
+**Insane (-T5)** pushes everything to the limit. Timeouts are extremely short, parallelism is maximized. The risk is that on slower or congested networks, probes time out before responses arrive, leading to ports being classified as filtered when they are actually open. Results from T5 scans should be verified with a slower timing setting if unusual results appear.
+
+In a real engagement, the timing selection communicates something about the tester's strategy. External tests against a production web application might use T1 or T2 to stay under intrusion detection thresholds. Internal tests on a fast corporate LAN typically use T3 or T4. Red team engagements simulating advanced persistent threats use T0 or T1 during initial reconnaissance phases.
+
+---
+
+### OS Detection, Version Detection, and the NSE — Completing the Picture
+
+Beyond scan types, three additional Nmap capabilities deserve deep understanding because they transform raw port data into actionable intelligence.
+
+**Service and Version Detection (-sV)** sends protocol-specific probes to each open port and compares the responses against a database of known service signatures. Instead of just knowing that port 8080 is open, version detection tells you it is running Apache Tomcat 9.0.37. That specific version number is then searchable against vulnerability databases — and Tomcat 9.0.37 happens to be vulnerable to CVE-2021-41079, a denial-of-service vulnerability. The jump from "port 8080 is open" to "this specific Tomcat version has a known CVE" happens because of version detection.
+
+**OS Detection (-O)** works by analyzing subtle differences in how different operating systems implement TCP/IP. The initial sequence number (ISN) values that systems generate, the TCP options they include in packets, their response to unusual flag combinations, their IP TTL values, and their behavior with fragmented packets all vary between Windows, Linux, macOS, Cisco IOS, and other systems. Nmap maintains a database of these behavioral fingerprints. When it probes a host, it compares the observed behavior to the database and identifies the most likely OS — often with remarkable specificity, identifying not just "Linux" but "Linux 4.15-5.6" or not just "Windows" but "Windows 10 1903-1909."
+
+**The Nmap Scripting Engine (NSE)** extends Nmap from a port scanner into a security assessment platform. Scripts are Lua programs that Nmap executes against discovered services. The default script set (`-sC`) runs safe, commonly useful scripts automatically. More targeted scripts can check for specific vulnerabilities: the `smb-vuln-ms17-010` script checks whether a target is vulnerable to EternalBlue (the exploit used by WannaCry and NotPetya). The `ssl-heartbleed` script checks for the Heartbleed vulnerability. The `snmp-brute` script attempts to determine the SNMP community string using a wordlist.
+
+---
+
+## 3.2.3 Practice — Nmap in a Real Engagement Context
+
+### How a Real Scan Sequence Looks
+
+In a professional engagement against a network like Pixel Paradise's, the scanning methodology follows a logical sequence that builds intelligence progressively.
+
+You start with host discovery across the entire in-scope IP range. This tells you which addresses are live and what their MAC vendor identifiers are — giving immediate clues about device types. A block of addresses all resolving to VMware MAC prefixes suggests a virtualization environment. Cisco MAC addresses suggest network equipment. Raspberry Pi or unknown vendors might indicate IoT devices.
+
+With the live host list in hand, you run an initial fast scan of the most common ports against all live hosts simultaneously. The goal is to get a broad overview quickly — which hosts are running web services, which are running Windows file sharing, which have SSH. This is typically a SYN scan of the top 1000 ports with version detection enabled.
+
+For hosts that look particularly interesting based on the initial scan, you run a full port scan of all 65,535 TCP ports. This takes longer but ensures you do not miss services running on non-standard ports — a web application on port 8080, a database on port 5984, an administrative interface on port 9090.
+
+Parallel to the TCP full scan, you run a targeted UDP scan of the most important UDP ports — 53, 67, 69, 123, 161, 162, 500, 514, and a few others depending on the environment. In a corporate network, SNMP is almost always present; whether it is secured is the question.
+
+Finally, for each discovered service, you run targeted Nmap scripts and manual enumeration tools to extract detailed intelligence. A host with SMB open gets enum4linux run against it. A host with SNMP open gets snmpwalk. A host with a web server gets nikto and gobuster.
+
+### Nmap Commands in Professional Context
+
+When running these scans, the commands follow patterns that you will use repeatedly throughout your career.
+
+For initial host discovery across a network range, the command sends ARP requests on the local network and ICMP/TCP probes to remote networks, storing results to a file that subsequent scans use as input. The key options ensure no reverse DNS lookups slow things down (the `-n` flag tells Nmap not to bother converting IP addresses to hostnames during discovery, since we just need to know which hosts are alive).
+
+For the initial broad port scan with service detection, the options combine a SYN scan (`-sS`) with service version detection (`-sV`) and the default NSE scripts (`-sC`). The output goes to all three formats simultaneously (`-oA`) so you have both human-readable results and machine-parseable XML for later processing.
+
+For the full TCP port scan, the critical option is `-p-` which tells Nmap to scan all 65535 ports rather than just the top 1000. This takes longer but is essential for comprehensive coverage.
+
+For UDP, the approach is to limit the scope to high-value ports and combine with version detection so Nmap sends protocol-specific probes rather than generic UDP packets — this dramatically improves accuracy.
+
+```bash
+# 1. Host Discovery
+sudo nmap -sn -n 10.10.10.0/24 -oG live_hosts.gnmap
+grep "Up" live_hosts.gnmap | awk '{print $2}' > live_hosts.txt
+
+# 2. Initial Broad Scan (top 1000 ports + version + default scripts)
+sudo nmap -sS -sV -sC -n --open -iL live_hosts.txt -oA initial_scan
+
+# 3. Full TCP Port Scan (all 65535 ports)
+sudo nmap -sS -p- -n -T4 --open -iL live_hosts.txt -oA full_tcp_scan
+
+# 4. Targeted UDP Scan (key UDP services)
+sudo nmap -sU -p 53,67,69,123,161,162,500,514,1900 -sV -n -iL live_hosts.txt -oA udp_scan
+
+# 5. OS Detection (against confirmed live hosts)
+sudo nmap -O -n -iL live_hosts.txt -oA os_detection
+
+# 6. Comprehensive single-host scan (for high-interest targets)
+sudo nmap -sS -sV -sC -O -p- -T4 --open --reason -n 10.10.10.50 -oA host_50_full
+```
+
+### Reading Nmap Output — What the Results Tell You
+
+When Nmap reports its findings, each piece of information carries specific intelligence. An open port 22 running OpenSSH 7.4 on an internal server means that SSH is accessible, and OpenSSH 7.4 is a version released in 2016 — cross-referencing against the CVE database reveals multiple vulnerabilities including CVE-2018-15919 (username enumeration) and CVE-2016-6515 (denial of service). Neither might be immediately exploitable, but the version date tells you the server has not been patched in years — which implies other services on this host are similarly outdated.
+
+An open port 3389 (RDP) visible on the network from an external perspective is almost always a critical finding. RDP has been the vector for numerous high-impact attacks including BlueKeep (CVE-2019-0708) and DejaBlue (CVE-2019-1182). Even if these specific vulnerabilities are patched, RDP brute force and credential stuffing attacks remain highly effective.
+
+A host running both SMB (port 445) and an old Windows version detected by OS fingerprinting is a potential EternalBlue target — the vulnerability at the core of WannaCry and NotPetya. Nmap's `smb-vuln-ms17-010` script confirms this in seconds.
+
+---
+
+## 3.2.4 Types of Enumeration — Extracting Intelligence from Open Ports
+
+### The Difference Between Scanning and Enumeration
+
+Port scanning tells you a door is open. Enumeration tells you what is behind that door, who has the keys, and what the security system looks like. It is the transition from reconnaissance to pre-exploitation intelligence gathering.
+
+When you find port 445 open (SMB), you know Windows file sharing is running. Enumeration tells you the list of shared folders, the list of user accounts on the system, the domain it belongs to, the password policy (how complex passwords must be, how many failed attempts trigger a lockout), and whether guest access is allowed. This is not abstract security information — it is the specific intelligence needed to decide which attack approach to take.
+
+### Banner Grabbing — The Simplest Form of Enumeration
+
+The simplest enumeration technique is banner grabbing. When most network services accept a new connection, they announce themselves by sending a text string identifying the software and its version. This string is called a "banner."
+
+Imagine walking into a hotel and the receptionist says "Welcome to the Grand Hotel, this is Janet speaking." You have just learned where you are and who you are dealing with. Banner grabbing is the network equivalent — you connect to a service and it tells you who it is.
+
+FTP (File Transfer Protocol, port 21) is particularly generous with information: connecting to an FTP server typically produces a response like `220 vsftpd 3.0.3` — directly revealing the software (vsftpd) and version (3.0.3). SSH servers send their version in the initial handshake: `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5` reveals not just OpenSSH 8.2p1 but the Ubuntu package version, which allows identification of the exact Ubuntu distribution and patch level.
+
+HTTP servers include version information in the `Server` header of their responses: `Server: Apache/2.4.41 (Ubuntu)` or `Server: Microsoft-IIS/10.0`. The `X-Powered-By` header often adds a second layer: `X-Powered-By: PHP/7.4.3`.
+
+Security-conscious server administrators often configure their services to remove or falsify these banners. Apache can be configured to report `Server: Apache` without the version, or even `Server: Unknown`. Nginx can be configured to send no Server header at all. This is security through obscurity — it does not fix any vulnerability, but it removes one easy source of information for attackers.
+
+Even with falsified banners, though, the specific behavior of a service — which features it supports, how it formats error messages, the timing of its responses — often reveals the real software and version. Nmap's version detection database is built around these behavioral signatures, not just banner strings.
+
+```bash
+# The simplest banner grab — using netcat
+nc -v target 21      # FTP — listen for the banner it sends immediately
+nc -v target 22      # SSH — listen for the SSH identification string
+nc -v target 25      # SMTP — listen for the SMTP greeting
+
+# For HTTP, you need to send a request before getting a response
+echo -e "HEAD / HTTP/1.0\r\n\r\n" | nc target 80
+
+# OpenSSL for HTTPS — shows both the TLS handshake details and the HTTP response
+openssl s_client -connect target:443 -quiet
+
+# curl is often the most practical for HTTP/HTTPS banner grabbing
+# -I means "send HEAD request and show only headers"
+# -k means "do not verify SSL certificate" (useful for self-signed certs)
+curl -I http://target
+curl -I -k https://target
+```
+
+### SNMP Enumeration — The Network's Open Book
+
+SNMP deserves extensive discussion because it represents one of the most impactful enumeration findings possible. A single SNMP-enabled device with the default "public" community string can hand you a complete map of the internal network.
+
+SNMP is a protocol designed for network management. It works on a simple query-response model: a management station sends queries to devices asking for specific pieces of management information, and the devices respond with that information. The information is organized in a hierarchical database called the Management Information Base (MIB).
+
+The security model in SNMP versions 1 and 2c (the versions still predominantly in use) is embarrassingly simple: a shared password called a "community string." The read-only community string (almost universally "public" by default) allows any device that knows it to query any information the MIB exposes. The read-write community string ("private" by default) allows not just querying but modifying device configuration.
+
+What can SNMP expose on a network device? Everything. The system description (device model, firmware version), the hostname, the list of all network interfaces and their IP addresses, the routing table (revealing network architecture), the ARP table (revealing every IP-to-MAC mapping the device has seen — effectively a list of all hosts on connected networks), the list of open TCP and UDP connections, BGP and OSPF neighbor information, interface bandwidth utilization, and error statistics.
+
+On a server, SNMP exposes the complete list of running processes (including their command-line arguments, which sometimes include passwords), the list of installed software with version numbers, network connection state (equivalent to running netstat), and system performance data.
+
+Finding SNMP open with default community strings on a core router during a penetration test is a major finding. It means the router's entire configuration is readable — including ACLs, routing policies, and potentially credentials stored in the configuration. If the read-write community string is also the default "private," the router can be reconfigured entirely without ever exploiting a single software vulnerability.
+
+```bash
+# First, confirm SNMP is running and find the community string
+# onesixtyone is a fast SNMP community string brute forcer
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt 10.10.10.50
+
+# snmpwalk traverses the entire MIB tree under a given OID
+# .1 is the root of the entire MIB tree — this walks everything
+snmpwalk -v2c -c public 10.10.10.50 .1
+
+# Target specific, high-value MIB branches:
+
+# System information — hostname, OS description, contact, location
+snmpwalk -v2c -c public 10.10.10.50 system
+
+# All network interfaces and their IP addresses
+snmpwalk -v2c -c public 10.10.10.50 interfaces
+snmpwalk -v2c -c public 10.10.10.50 ipAddrTable
+
+# ARP table — every IP-to-MAC the device has seen
+snmpwalk -v2c -c public 10.10.10.50 ipNetToMediaTable
+
+# Routing table — network topology
+snmpwalk -v2c -c public 10.10.10.50 ipRouteTable
+
+# Running processes (on servers)
+snmpwalk -v2c -c public 10.10.10.50 hrSWRunName
+
+# Installed software (on servers)
+snmpwalk -v2c -c public 10.10.10.50 hrSWInstalledName
+
+# snmp-check provides a much more readable formatted output
+snmp-check -t 10.10.10.50 -c public -v 2c
+```
+
+### SMB Enumeration — Windows Network Intelligence
+
+SMB (Server Message Block) is the protocol Microsoft Windows uses for file sharing, printer sharing, and various inter-process communication functions. It has been central to Windows networking since the 1980s and remains the backbone of virtually every Windows enterprise environment today.
+
+From a penetration testing perspective, SMB is one of the richest sources of intelligence on a Windows network — and also one of the most historically vulnerable protocols. EternalBlue, the exploit used by WannaCry ransomware in 2017, targeted SMB. Before that, MS08-067 (the "Conficker" vulnerability from 2008) also exploited SMB. Understanding SMB enumeration is fundamental to Windows network penetration testing.
+
+What can SMB enumeration reveal? It starts with basic network information: the hostname of the target, the domain or workgroup it belongs to, and the operating system version. It then extends to the security configuration: whether null sessions are allowed (connecting without credentials), whether the Guest account is enabled, and the password policy (minimum length, complexity requirements, lockout threshold).
+
+The password policy is particularly important. If the account lockout threshold is 5 (five failed attempts before lockout), you can attempt 4 passwords per account without triggering a lockout. If the lockout threshold is 0 (no lockout), you can attempt unlimited passwords. If the lockout observation window is 30 minutes (attempts reset every 30 minutes), you can attempt 4 passwords now, wait 30 minutes, attempt 4 more, and continue indefinitely. This intelligence directly determines the viability and strategy of password spray attacks.
+
+SMB enumeration also reveals the list of shared folders. Shares with names ending in `$` are "hidden" shares — they do not appear when browsing the network — but they are visible through enumeration. The default administrative shares `C$`, `D$`, `ADMIN$`, and `IPC$` are present on every Windows machine. Access to `ADMIN$` allows file upload to the Windows directory. Access to `C$` allows reading and writing the entire C drive.
+
+```bash
+# enum4linux is the standard SMB enumeration tool for Linux
+# -a performs a full enumeration (all options)
+enum4linux -a 10.10.10.50
+
+# What enum4linux tries to find:
+# Workgroup/domain name
+# NetBIOS hostname  
+# OS version
+# SMB shares (including hidden $ shares)
+# User accounts
+# Group memberships
+# Password policy
+# Printer information
+
+# enum4linux-ng is the modern rewrite with better output formatting
+enum4linux-ng -A 10.10.10.50
+
+# smbclient lists shares — equivalent to "Network Places" in Windows
+# The -L flag means "list shares"
+# The // means "connect to this server"
+# The -N flag means "no password" (null session)
+smbclient -L //10.10.10.50 -N
+
+# smbmap shows shares and your permission level on each
+smbmap -H 10.10.10.50                          # Anonymous/null session
+smbmap -H 10.10.10.50 -u john -p Password123  # Authenticated
+
+# Nmap SMB scripts for specific intelligence gathering
+nmap --script smb-enum-shares 10.10.10.50
+nmap --script smb-enum-users 10.10.10.50
+nmap --script smb-security-mode 10.10.10.50
+nmap --script smb-vuln-ms17-010 10.10.10.50   # Check for EternalBlue
+nmap --script "smb-vuln-*" 10.10.10.50        # All SMB vulnerability checks
+```
+
+### DNS Enumeration (Active)
+
+While passive DNS reconnaissance (covered in Section 3.1) uses third-party services to look up DNS records without touching the target's DNS servers, active DNS enumeration directly queries the target's DNS infrastructure.
+
+The most impactful active DNS technique is the **zone transfer** — requesting that the target's DNS server send you its complete zone file. A DNS zone file contains every DNS record for a domain: every A record (hostname to IP mapping), every CNAME (alias), every MX (mail server), every TXT record, and every SRV record. A successful zone transfer is equivalent to getting a complete inventory of every named resource in the organization's DNS namespace.
+
+Zone transfers are supposed to be restricted to authorized secondary DNS servers — the secondary servers that need to synchronize zone data from the primary. Misconfigured DNS servers allow zone transfer requests from any IP address, which means a penetration tester can retrieve the entire DNS database in seconds.
+
+In practice, allowing unrestricted zone transfers is a recognized security misconfiguration that gets flagged in security assessments. Many organizations have corrected this. But it is always worth attempting, because the payoff of a successful zone transfer — an instant, complete inventory of the organization's DNS namespace — is significant.
+
+Beyond zone transfers, active DNS enumeration includes brute force subdomain discovery (systematically querying the DNS server with a list of common subdomain names to find which ones resolve) and DNS walking for DNSSEC-enabled zones (which exposes the complete list of records in a zone through the NSEC record chain).
+
+```bash
+# Zone transfer attempt — always try this first
+dig axfr targetco.com @ns1.targetco.com
+
+# If zone transfer fails, brute force subdomains
+# gobuster's DNS mode sends DNS queries for each word in the wordlist
+gobuster dns -d targetco.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -r 8.8.8.8
+
+# dnsrecon is a comprehensive DNS enumeration tool
+# -t std runs standard enumeration (SOA, NS, A, AAAA, MX, TXT, SRV)
+# -t axfr attempts zone transfer
+# -t brt brute forces subdomains
+dnsrecon -d targetco.com -t std
+dnsrecon -d targetco.com -t axfr
+dnsrecon -d targetco.com -t brt -D /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+
+# fierce does DNS reconnaissance specifically looking for network ranges
+fierce --domain targetco.com
+```
+
+### SMTP Enumeration — Verifying Email Accounts
+
+SMTP (Simple Mail Transfer Protocol) is the protocol email servers use to send mail. Some SMTP servers support commands that allow querying whether a user account exists — functionality originally designed for legitimate purposes but now primarily used by spammers (to verify email lists) and penetration testers (to enumerate valid accounts for phishing or credential attacks).
+
+The **VRFY command** asks the SMTP server to verify whether an email address or username is valid. A server responds with "250 OK" if the user exists or "550 No such user" if they do not.
+
+The **EXPN command** expands a mailing list alias — asking the server to tell you all the email addresses that receive mail sent to a given alias. For example, `EXPN all-staff@targetco.com` might reveal dozens of individual employee email addresses.
+
+The **RCPT TO command** is the most reliable verification method because it is part of normal mail delivery. An SMTP server must accept or reject each recipient address during mail delivery. Sending a test delivery attempt to `RCPT TO: john.smith@targetco.com` and observing whether the server accepts or rejects it reveals whether the account exists — even on servers that have disabled VRFY and EXPN.
+
+Modern mail servers have largely disabled VRFY and EXPN for security reasons. But many older or poorly configured servers still respond. And the RCPT TO technique remains functional on many servers.
+
+```bash
+# Manual SMTP enumeration using netcat
+# Connect to the SMTP server
+nc -v target 25
+
+# Once connected, you will see the SMTP banner (e.g., "220 mail.targetco.com ESMTP")
+# Type these commands:
+EHLO test.com                          # Introduce yourself, see supported commands
+VRFY john.smith                        # Check if user exists
+EXPN marketing                         # Expand a mailing list
+QUIT                                   # Close connection
+
+# smtp-user-enum automates this process across a user list
+# -M VRFY specifies the method
+# -U specifies the username file
+# -t specifies the target
+smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/Names/names.txt -t target
+smtp-user-enum -M RCPT -U users.txt -D targetco.com -t target
+
+# Nmap scripts for SMTP
+nmap --script smtp-commands target     # List supported SMTP commands
+nmap --script smtp-enum-users target   # Enumerate users
+nmap --script smtp-open-relay target   # Check for open relay (allows anyone to send mail through this server)
+```
+
+### HTTP and Web Service Enumeration
+
+Web services are almost always present in modern penetration testing engagements — even networks that appear to be primarily Windows file sharing environments typically have some web-based management interface. Web service enumeration extends from basic banner grabbing into directory discovery, technology identification, and vulnerability scanning.
+
+**Directory and file brute forcing** is the process of systematically requesting paths on a web server to discover hidden or unlisted content. A web application might have an administrative interface at `/admin/`, a backup file at `/backup.zip`, an API documentation page at `/api/v2/docs`, or a test file left by a developer at `/test.php`. None of these paths are linked from the main site — but they exist and are accessible. Directory brute forcing finds them.
+
+The wordlists used for directory brute forcing are critical. SecLists — a curated collection of security-relevant wordlists maintained on GitHub — contains directory wordlists with hundreds of thousands of entries derived from real web applications and historical assessments. The most commonly used are the directory-list files in the `/Discovery/Web-Content/` category.
+
+**Technology identification** determines what CMS (Content Management System), framework, and programming language the web application uses. A WordPress site (identifiable by the `/wp-content/`, `/wp-admin/`, and `/wp-login.php` paths, as well as the `?p=` parameter pattern in URLs) has a completely different vulnerability surface than a Laravel PHP application or a React+Node.js application. Tools like WhatWeb and the Wappalyzer browser extension analyze HTTP response headers, HTML structure, JavaScript includes, and cookie names to identify the technology stack with impressive accuracy.
+
+**Nikto** is a web vulnerability scanner specifically designed for finding known issues in web server configurations. It checks for thousands of potentially dangerous files and programs, outdated server software, and configuration issues like directory listing being enabled, server headers exposing sensitive information, and missing security headers.
+
+```bash
+# Directory and file discovery — gobuster is the industry standard
+# dir mode = directory/file brute forcing
+# -u = target URL
+# -w = wordlist
+# -x = file extensions to check (appends these to each wordlist entry)
+# -b = HTTP status codes to filter out (404 is the default not-found code)
+gobuster dir -u http://10.10.10.50 \
+             -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt \
+             -x php,html,txt,bak,conf,xml \
+             -b 404,403
+
+# ffuf (Fuzz Faster U Fool) is faster and more flexible
+# FUZZ is the placeholder for the wordlist value
+ffuf -u http://10.10.10.50/FUZZ \
+     -w /usr/share/seclists/Discovery/Web-Content/common.txt \
+     -fc 404
+
+# Technology identification
+whatweb -v http://10.10.10.50      # -v for verbose output
+
+# Nikto web vulnerability scanner
+nikto -h http://10.10.10.50
+nikto -h https://10.10.10.50 -ssl
+nikto -h http://10.10.10.50 -o nikto_results.html -Format html
+
+# Always manually check these files on every web server:
+curl http://10.10.10.50/robots.txt          # Intentionally hidden paths
+curl http://10.10.10.50/sitemap.xml         # Full site URL map
+curl http://10.10.10.50/.well-known/security.txt  # Security contact info
+curl -I http://10.10.10.50/                # Response headers reveal server info
+```
+
+---
+
+## 3.2.5 Enumeration via Packet Crafting with Scapy
+
+### Why Scapy Matters Beyond Nmap
+
+Nmap is a remarkable tool, but it is also a fixed tool — it sends predetermined probe sequences and interprets responses according to built-in logic. Scapy is the opposite: it is a Python library for constructing any network packet from scratch, at any layer, with any values in any field.
+
+Think of Nmap as a Swiss Army knife — it has many tools, all expertly crafted for common tasks. Think of Scapy as a metalworking shop where you have raw steel and every tool imaginable — you can build any knife you want, including ones that have never existed before.
+
+This matters for several reasons. Sometimes you need to test how a target responds to a specific, unusual packet — a packet with specific flag combinations, a specific sequence number, a malformed header. Nmap cannot send that. Scapy can. Sometimes you need to test a proprietary protocol that Nmap knows nothing about. Scapy can craft packets for any protocol you understand well enough to implement. Sometimes you need to automate a complex multi-packet interaction — send a packet, receive a response, make a decision based on the response, send a different packet based on that decision. Scapy can do this in Python.
+
+For penetration testing enumeration specifically, Scapy is valuable for:
+
+Implementing custom port scanning logic — for example, a SYN scan that sends probes at precisely calculated time intervals to evade timing-based IDS detection, adjusting the interval based on observed response patterns.
+
+Building custom protocol interaction — if you discover a service running on an unusual port and need to speak its protocol, Scapy lets you construct and send the exact protocol-specific packets needed.
+
+Testing firewall behavior — by crafting packets with specific, unusual combinations of flags, TTL values, or fragmentation patterns, you can probe exactly how a firewall processes different packet types.
+
+Implementing attacks from academic research — security research papers frequently describe attacks in terms of specific packet sequences. Implementing these in Scapy is often the fastest path to a working proof-of-concept.
+
+### How Scapy Thinks About Packets
+
+Scapy represents network packets as stacked objects, each representing one layer of the network model. The `/` operator stacks layers together, with lower layers on the left and higher layers on the right.
+
+```python
+# This is how you think about a typical HTTPS request packet:
+# Layer 2 (Ethernet) / Layer 3 (IP) / Layer 4 (TCP) / Application data
+Ether() / IP() / TCP() / Raw("GET / HTTP/1.0\r\n\r\n")
+
+# You can start at any layer — if you are routing (not on local LAN),
+# you do not need Ethernet:
+IP() / TCP()
+
+# If you want to test ARP (purely local network):
+Ether() / ARP()
+
+# For ICMP ping:
+IP() / ICMP()
+```
+
+Within each layer, every field has a default value, but you can override any field. The IP layer defaults to a TTL of 64, but you can change it. The TCP layer defaults to SYN flags, but you can set any combination of flags. You can set incorrect checksums to test how a target handles malformed packets. You can set impossible values to test bounds checking.
+
+This level of control is what makes Scapy invaluable for advanced security testing and research — it treats the network protocol as what it actually is: a structured set of fields that can be set to any value.
+
+### Scapy in Enumeration Context
+
+For the purposes of this module, Scapy is used in enumeration to supplement Nmap with custom probes. The most common use cases are:
+
+**Custom SYN scanning with fine-grained control.** Nmap's SYN scan is excellent, but Scapy lets you control every aspect of the probe — the source port, the exact sequence number, the TCP window size, the timing between probes. This is useful when you need to craft probes that look like specific legitimate traffic to bypass application-layer inspection.
+
+**ARP scanning for local network host discovery.** On a local LAN segment, sending ARP requests is the most reliable host discovery technique. Scapy makes it easy to build custom ARP scanning logic.
+
+**OS fingerprinting.** Different operating systems respond differently to unusual packets. By crafting specific probe packets and analyzing the responses with Scapy, you can build a fingerprinting system tailored to your specific needs.
+
+**Protocol fuzzing.** Sending packets with slightly malformed values to discover how a service handles invalid input — the foundation of fuzzing-based vulnerability discovery.
+
+```python
+from scapy.all import *
+
+# ARP Scan — Find all live hosts on the local network
+# This sends an ARP broadcast to the entire subnet
+# ARP cannot be blocked by host firewalls — it works at the Ethernet level
+def arp_scan(network_range):
+    # Ether(dst="ff:ff:ff:ff:ff:ff") = broadcast MAC (send to everyone)
+    # ARP(pdst=network_range) = "Who has IP address X? Tell me your MAC"
+    arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=network_range)
+    
+    # srp() = Send and Receive at the Ethernet (Packet) level
+    # timeout=3 = wait 3 seconds for responses
+    # verbose=False = suppress output (we handle display ourselves)
+    answered, unanswered = srp(arp_request, timeout=3, verbose=False)
+    
+    live_hosts = []
+    for sent_packet, received_packet in answered:
+        ip = received_packet[ARP].psrc       # Source IP from ARP reply
+        mac = received_packet[Ether].src     # Source MAC from Ethernet header
+        live_hosts.append({'ip': ip, 'mac': mac})
+        print(f"[+] {ip:<20} {mac}")
+    
+    return live_hosts
+
+hosts = arp_scan("192.168.1.0/24")
+
+
+# Custom SYN Scan — Port discovery with full control over probe construction
+def syn_scan(target_ip, port_list):
+    open_ports = []
+    
+    for port in port_list:
+        # Construct the SYN packet
+        # IP layer: set destination, let Scapy fill in source IP automatically
+        # TCP layer: destination port, flags="S" means SYN only, random source port
+        syn_packet = IP(dst=target_ip) / TCP(dport=port, flags="S", sport=RandShort())
+        
+        # sr1() = Send one packet, Receive one response
+        # timeout=1 = wait 1 second for response before giving up
+        response = sr1(syn_packet, timeout=1, verbose=False)
+        
+        if response is None:
+            # No response at all = filtered
+            continue
+        
+        if response.haslayer(TCP):
+            tcp_flags = response[TCP].flags
+            
+            if tcp_flags == "SA":
+                # SYN-ACK received = port is OPEN
+                open_ports.append(port)
+                print(f"[+] Port {port}: OPEN")
+                
+                # Send RST to cleanly close the half-open connection
+                # Without this, the target keeps waiting for ACK completion
+                rst = IP(dst=target_ip) / TCP(
+                    dport=port,
+                    sport=response[TCP].dport,
+                    flags="R",
+                    seq=response[TCP].ack
+                )
+                send(rst, verbose=False)
+            
+            elif "R" in str(tcp_flags):
+                # RST received = port is CLOSED
+                pass
+    
+    return open_ports
+
+# Scan first 1024 ports
+open_ports = syn_scan("10.10.10.50", range(1, 1025))
+
+
+# ICMP Ping Sweep — More control than nmap -sn for specific scenarios
+def icmp_sweep(network_range):
+    # Create ICMP echo request packets for the entire range
+    ping_packets = IP(dst=network_range) / ICMP()
+    
+    # sr() = Send multiple packets, Receive responses to all of them
+    answered, unanswered = sr(ping_packets, timeout=2, verbose=False)
+    
+    print(f"\nHosts that responded to ICMP:")
+    for sent, received in answered:
+        print(f"[+] {received[IP].src} is alive (TTL={received[IP].ttl})")
+        
+        # TTL analysis for OS guessing
+        ttl = received[IP].ttl
+        if ttl <= 64:
+            print(f"    → Likely Linux/Unix (TTL {ttl}, initial TTL probably 64)")
+        elif ttl <= 128:
+            print(f"    → Likely Windows (TTL {ttl}, initial TTL probably 128)")
+        else:
+            print(f"    → Likely network device (TTL {ttl}, initial TTL probably 255)")
+
+icmp_sweep("192.168.1.1/24")
+```
+
+---
+
+## 3.2.6 Lab Reference — Enumeration with Nmap
+
+This section consolidates the professional enumeration workflow using Nmap — the commands and reasoning you would apply in a real lab or engagement environment against discovered targets.
+
+### The Enumeration Mindset
+
+When you sit down at your attack machine with a list of open ports from your scan results, your mindset should be systematic: for each open port, identify the service, understand what information that service can expose, and use the right tools to extract that information.
+
+The Pixel Paradise network (from the engagement scenario) contains diverse device types. A camera with an open HTTP port might have a default-credential web interface. A VoIP phone with SIP on port 5060 might expose extension numbers and authentication data. A Windows workstation with SMB open might have shares accessible without credentials. A network printer with SNMP might reveal the entire printer configuration including previously printed documents.
+
+Treating enumeration as a generic "run these commands" exercise misses the point. Each discovered service is a potential source of intelligence that feeds into the attack phase. The question for every open port is: "What does this service know, and how can I extract it?"
+
+### Systematic Enumeration Commands
+
+```bash
+# ============================================================
+# COMPLETE PROFESSIONAL ENUMERATION WORKFLOW
+# ============================================================
+
+# Target: 10.10.10.50 (discovered to have several open ports)
+
+# STEP 1: Get full port and service detail for this specific host
+sudo nmap -sS -sV -sC -O -p- -T4 --open --reason 10.10.10.50 -oA host_50_full
+
+# This command combines:
+# -sS    = SYN scan (fast, fewer logs)
+# -sV    = Service and version detection
+# -sC    = Default NSE scripts (runs category "default")
+# -O     = OS detection
+# -p-    = All 65535 TCP ports
+# -T4    = Aggressive timing (good for internal LAN)
+# --open = Only show open ports in output
+# --reason = Show why Nmap classified each port as it did
+# -oA    = Save all output formats (normal, XML, grepable)
+
+
+# STEP 2: Based on what is open, run targeted enumeration
+
+# If port 22 (SSH) is open:
+nmap --script ssh-auth-methods --script-args="ssh.user=root" 10.10.10.50
+nmap --script ssh2-enum-algos 10.10.10.50
+# Look for: password authentication allowed (vs key-only), weak algorithm support
+
+# If port 80/443 (HTTP/HTTPS) is open:
+nikto -h http://10.10.10.50                     # Vulnerability scan
+gobuster dir -u http://10.10.10.50 \
+             -w /usr/share/seclists/Discovery/Web-Content/common.txt \
+             -x php,html,txt
+whatweb -v http://10.10.10.50                   # Technology fingerprint
+curl -I http://10.10.10.50                      # Header analysis
+
+# If port 21 (FTP) is open:
+nmap --script ftp-anon 10.10.10.50              # Check anonymous login
+nmap --script ftp-syst 10.10.10.50              # System information
+ftp 10.10.10.50                                 # Manual connection attempt
+# Username: anonymous, Password: anything@anything.com
+
+# If port 25 (SMTP) is open:
+nmap --script smtp-commands 10.10.10.50
+nmap --script smtp-enum-users 10.10.10.50
+smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/Names/names.txt -t 10.10.10.50
+
+# If port 53 (DNS) is open:
+dig axfr targetco.com @10.10.10.50              # Zone transfer attempt
+dnsrecon -d targetco.com -t axfr -n 10.10.10.50
+
+# If port 139/445 (SMB) is open:
+enum4linux-ng -A 10.10.10.50                    # Full SMB enumeration
+smbclient -L //10.10.10.50 -N
+smbmap -H 10.10.10.50
+nmap --script "smb-vuln-*" 10.10.10.50         # Vulnerability checks
+
+# If port 161 (SNMP/UDP) is open:
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt 10.10.10.50
+snmp-check -t 10.10.10.50 -c public -v 2c      # If "public" works
+
+# If port 389 (LDAP) is open:
+ldapsearch -x -H ldap://10.10.10.50 -b "" -s base namingContexts  # Get base DN
+ldapsearch -x -H ldap://10.10.10.50 -b "DC=targetco,DC=com" "(objectClass=*)"
+
+# If port 3306 (MySQL) is open:
+nmap --script mysql-info 10.10.10.50
+nmap --script mysql-empty-password 10.10.10.50  # Check for no-password root
+mysql -h 10.10.10.50 -u root --connect-timeout=5  # Manual login attempt
+
+# If port 3389 (RDP) is open:
+nmap --script rdp-enum-encryption 10.10.10.50
+nmap --script rdp-vuln-ms12-020 10.10.10.50    # DoS vulnerability check
+
+# If port 6379 (Redis) is open:
+redis-cli -h 10.10.10.50 ping                  # Basic connectivity — no auth = critical finding
+redis-cli -h 10.10.10.50 info server           # Server information
+redis-cli -h 10.10.10.50 config get *          # All configuration
+
+# If port 27017 (MongoDB) is open:
+nmap --script mongodb-info 10.10.10.50
+mongo --host 10.10.10.50 --eval "db.adminCommand({listDatabases:1})"  # No-auth check
+```
+
+---
+
+## 3.2.7 Packet Inspection and Eavesdropping
+
+### What Eavesdropping Actually Means in a Network Context
+
+When you are physically in a room with someone, eavesdropping means positioning yourself close enough to hear their conversation. Network eavesdropping is the same idea — positioning yourself on the network so that traffic flows through or past your machine, and capturing that traffic to analyze it.
+
+The concept of "listening" to a network is both simpler and more complex than it sounds. Simpler because the data is already there — bytes are literally flowing through the network infrastructure, and if your network interface can see them, you can capture them. More complex because modern switched networks specifically prevent most ports from seeing traffic that is not addressed to them.
+
+Understanding this requires understanding the difference between **hubs** and **switches** — two types of devices that connect computers in a local network.
+
+A hub is a simple, old-fashioned device. When it receives a packet on one port, it forwards that packet out of every other port — broadcasting everything to everyone. Every computer connected to a hub can see every other computer's traffic, just by putting its network interface into "promiscuous mode" (accepting all packets, not just those addressed to it). Hubs are now obsolete, but they illustrate an important point: in an environment where all traffic is broadcast, eavesdropping is trivially easy.
+
+A switch is intelligent. It learns the MAC address of the device connected to each port and builds a table (called the CAM table or MAC address table) that maps MAC addresses to port numbers. When it receives a packet destined for a specific MAC address, it forwards that packet only to the port where that MAC address is connected — not to every port. This isolation means a computer on port 5 normally cannot see traffic between computers on ports 3 and 7.
+
+"Normally" is doing a lot of work in that sentence. Several techniques break this isolation:
+
+**Promiscuous mode** still captures broadcast traffic (packets addressed to the broadcast MAC `ff:ff:ff:ff:ff:ff`, which go to all ports) and any traffic the switch mistakenly sends to your port. This is enough to capture ARP traffic and some discovery protocols but not individual unicast sessions between other hosts.
+
+**ARP Poisoning** is the primary technique for eavesdropping on switched networks during authorized penetration tests. By poisoning the ARP caches of two communicating hosts, an attacker inserts themselves as the man-in-the-middle — all traffic between the two hosts flows through the attacker's machine, where it can be captured and analyzed before being forwarded to the real destination.
+
+**VLAN Hopping** exploits misconfigurations in switch trunk port settings to send traffic onto VLANs (Virtual Local Area Networks) other than the one you are assigned to. VLANs are network segmentation technology — they create virtual separation between groups of devices on the same physical switch. A successful VLAN hop breaks this separation.
+
+**Switch port mirroring (SPAN port)** is the legitimate, authorized version of eavesdropping. Many managed switches allow an administrator to configure a "SPAN port" that mirrors all traffic from specified ports to a monitoring port. During authorized penetration tests, the client may configure a SPAN port connected to your testing machine, giving you visibility into all traffic on the monitored segments without needing any attack technique.
+
+### What Is Capturable vs. What Is Encrypted
+
+This is a critical distinction that determines the value of eavesdropping in any given environment.
+
+For **unencrypted protocols**, packet capture is devastating. Telnet passes every keystroke in plaintext — capturing a Telnet session means seeing every command the user types and every response the server sends, including passwords entered at login prompts. FTP passes credentials in plaintext. HTTP passes all web traffic in plaintext — including POST bodies containing login form data, including session cookies that can be replayed to impersonate authenticated users.
+
+SNMP v1 and v2c pass community strings in plaintext. Capturing a single SNMP query reveals the community string, which can then be used for extensive enumeration. POP3 and IMAP without TLS pass email credentials and content in plaintext.
+
+For **encrypted protocols**, the content is protected, but metadata is still visible. You can see that a connection was made from IP address A to IP address B on port 443, at what time, for how long, and how many bytes were transferred — even if you cannot see the actual content. This metadata alone can be revealing: connections from an internal server to an unusual external IP address might indicate malware C2 communication, even though the content is encrypted.
+
+The important nuance: encryption at the transport layer (TLS/SSL) protects content, but vulnerabilities in TLS itself (covered extensively in Section 3.1.13 on cryptographic flaws) can sometimes expose encrypted traffic to decryption. SSL stripping attacks can downgrade HTTPS connections to HTTP in some scenarios, removing the encryption protection entirely.
+
+### ARP Poisoning — The MitM Foundation
+
+ARP (Address Resolution Protocol) is the protocol that translates between IP addresses and MAC addresses on a local network. When computer A wants to send a packet to computer B (IP 192.168.1.2), it first broadcasts an ARP question: "Who has 192.168.1.2? Tell 192.168.1.1." Computer B responds: "192.168.1.2 is at MAC AA:BB:CC:DD:EE:FF." Computer A caches this mapping in its ARP table and uses it for all future packets to that IP.
+
+The critical weakness: ARP has no authentication whatsoever. Any device can send an ARP reply claiming any IP-to-MAC mapping, and the receiving device will update its ARP cache with the new information — even without having asked a question. These are called "gratuitous ARP replies."
+
+ARP poisoning exploits this by sending fake gratuitous ARP replies to both sides of a communication:
+
+To the victim (say, a workstation at 192.168.1.100): "192.168.1.1 (the gateway) is at MAC AA:BB:CC:11:22:33 (the attacker's MAC)."
+
+To the gateway (192.168.1.1): "192.168.1.100 (the workstation) is at MAC AA:BB:CC:11:22:33 (the attacker's MAC)."
+
+Now when the workstation tries to send traffic to the internet, it sends it to the attacker's MAC instead of the gateway's MAC. The attacker receives the traffic, captures it, and then forwards it to the real gateway — so the communication still works from the victim's perspective. The victim sees no disruption. The attacker sees everything.
+
+This must only be performed with explicit authorization on networks you have permission to test. ARP poisoning can cause network disruption if IP forwarding is not properly enabled on the attacking machine — traffic gets captured but not forwarded, causing apparent network outages for the victim.
+
+```bash
+# ARP poisoning using arpspoof (from the dsniff package)
+# You need TWO terminal windows running simultaneously
+
+# Terminal 1: Tell the VICTIM that YOU are the GATEWAY
+# -i eth0 = use this network interface
+# -t 192.168.1.100 = poison this target's ARP cache
+# 192.168.1.1 = claim to be this IP (the gateway)
+sudo arpspoof -i eth0 -t 192.168.1.100 192.168.1.1
+
+# Terminal 2: Tell the GATEWAY that YOU are the VICTIM
+sudo arpspoof -i eth0 -t 192.168.1.1 192.168.1.100
+
+# CRITICAL: Enable IP forwarding so traffic actually passes through
+# Without this, all victim traffic is captured but not forwarded
+# — the victim's internet connection appears to stop working
+echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+
+# Bettercap — the modern, more powerful alternative
+sudo bettercap -iface eth0
+
+# Inside bettercap's interactive console:
+# Discover hosts on the network
+net.probe on
+# Wait a moment, then show discovered hosts
+net.show
+# Set target for ARP poisoning
+set arp.spoof.targets 192.168.1.100
+# Start ARP poisoning
+arp.spoof on
+# Start capturing traffic
+net.sniff on
+```
+
+---
+
+## 3.2.8 Practice — Packet Inspection in a Real Scenario
+
+### A Real-World Eavesdropping Scenario
+
+To understand why packet inspection and eavesdropping matters in a penetration test, consider this realistic scenario: you are conducting an internal network assessment for a financial company. Your scan has found a /24 network segment with mixed devices. You have established a man-in-the-middle position on this segment by ARP poisoning the default gateway.
+
+With traffic flowing through your machine, you start Wireshark and look at what you can see. Within minutes, a striking picture emerges. Periodic packets are flowing from one server to a network printer — and they are SNMP queries, completely unencrypted, revealing the community string "private" in plaintext. That "private" community string is the read-write community string for the printer's management interface. You now have full management access to every printer on the network — including the ability to retrieve previously printed documents from the printer's internal storage.
+
+Five minutes later, you see FTP traffic between an employee's workstation and an internal file server. FTP sends credentials in plaintext. You can read: "USER jsmith" and "PASS Summer2024!" — a credential that, because of password reuse, might also work for the company's VPN, email system, or Active Directory.
+
+Later in the capture, a developer connects to their development database and the connection string — including server address, database name, username, and password — passes in cleartext in the HTTP traffic from a web application still in HTTP (not HTTPS) during development.
+
+None of this required exploiting a single software vulnerability. It was all available in the network traffic, captured entirely legally within the scope of the authorized penetration test. This scenario illustrates precisely why encryption in transit matters so much — and why its absence is always a critical finding in a penetration test report.
+
+### Wireshark Display Filters in Practice
+
+When analyzing captured traffic, the challenge is not capturing packets — it is finding the relevant packets among potentially millions. A busy network generates enormous amounts of traffic, and Wireshark display filters are the primary tool for cutting through the noise.
+
+Think of display filters as SQL WHERE clauses for network traffic. You can filter on any field of any protocol with equality, inequality, range, and string match operators. You can combine conditions with AND, OR, and NOT. The filter language is intuitive once you understand the pattern: `protocol.field_name == value`.
+
+The most practically useful filters for penetration testing fall into a few categories:
+
+For finding **authentication traffic**, you are looking for HTTP POST requests (which carry form data including login credentials), FTP credential commands (USER and PASS), and cleartext authentication in older protocols. 
+
+For finding **data of interest**, you are searching packet contents for keywords like "password," "credential," "admin," or specific data types relevant to the engagement (credit card numbers, social security numbers, PHI).
+
+For **credential capture via NTLM**, SMB traffic on a Windows network carries NTLM authentication hashes during the login process. These hashes are not cleartext passwords, but they can be cracked offline or used directly in pass-the-hash attacks.
+
+```bash
+# Launch Wireshark from command line
+sudo wireshark &
+
+# Or use the command-line version for remote/headless scenarios
+sudo tshark -i eth0
+
+# Capture to file for later analysis
+sudo tshark -i eth0 -w capture.pcap
+
+# Read from capture file
+tshark -r capture.pcap
+
+# Apply display filter while reading
+tshark -r capture.pcap -Y "http.request.method == POST"
+```
+
+In Wireshark's display filter bar, these filters are typed directly:
+
+```
+# Show only HTTP POST requests (login form submissions)
+http.request.method == "POST"
+
+# Show all HTTP traffic containing the word "password" anywhere
+http contains "password"
+
+# Show traffic between two specific hosts
+ip.addr == 192.168.1.100 && ip.addr == 192.168.1.200
+
+# Show FTP authentication commands
+ftp.request.command == "USER" || ftp.request.command == "PASS"
+
+# Show all DNS queries (not responses) — what are users looking up?
+dns.flags.response == 0
+
+# Show NTLM authentication exchanges in SMB traffic
+ntlmssp
+
+# Show all traffic to or from a specific subnet
+ip.addr == 10.10.10.0/24
+
+# Show everything EXCEPT your SSH connection (so you do not pollute the capture)
+not (tcp.port == 22 && ip.addr == your_ip)
+
+# Show only TCP connection initiations (SYN packets without ACK)
+tcp.flags.syn == 1 && tcp.flags.ack == 0
+
+# Find large data transfers that might be exfiltration
+tcp.len > 10000
+
+# Show all SNMP traffic (where community strings live)
+snmp
+
+# Show all Telnet traffic (fully cleartext)
+telnet
+```
+
+The "Follow TCP Stream" feature in Wireshark is particularly powerful — right-clicking any packet in a session and selecting "Follow → TCP Stream" reassembles the entire conversation between the two parties and displays it as human-readable text, exactly as it passed over the wire. A login session's credentials, a file transfer's contents, a database query and its results — all visible in a single coherent view.
+
+---
+
+## 3.2.9 Packet Crafting with Scapy — Full Professional Reference
+
+### The Philosophy of Packet Crafting
+
+To use Scapy well, you need to understand what you are actually doing at a technical level. Network communication is, at its foundation, a set of structured byte sequences. An IP packet is not magic — it is a sequence of bytes with specific fields at specific positions. The first byte contains version and header length information. Bytes 2-3 are the total length. Bytes 8-9 are the TTL and protocol. Bytes 12-15 are the source IP address. Bytes 16-19 are the destination IP address.
+
+Every protocol is defined by a specification (usually an RFC — Request for Comments document) that precisely defines which fields appear at which byte positions, how large each field is, and what values are valid. TCP's SYN flag lives in bit 1 (zero-indexed) of byte 13 in the TCP header. ACK is in bit 4. FIN is in bit 0. Scapy knows all of this — it encodes every RFC-defined protocol as a Python class where each field is a named attribute.
+
+When you set `TCP(flags="S")` in Scapy, you are setting the SYN bit in that byte of the TCP header. When you set `IP(ttl=128)`, you are writing 128 into byte 8 of the IP header. Scapy translates your Python attribute assignments into the correct byte positions in the packet before sending it.
+
+This is why Scapy is so powerful: it is a protocol-aware byte constructor that understands every standard protocol but does not constrain you to valid values. You can set TTL to 0, flags to illegal combinations, sequence numbers to any value — because sometimes security testing requires sending exactly those invalid packets to see how a target responds.
+
+### Scapy Architecture — Send and Receive Functions
+
+Scapy has four primary functions for sending packets and receiving responses, and understanding which to use when is important:
+
+`send()` sends a packet at Layer 3 (IP level) and does not wait for a response. Use this when you want to send a packet and do not care about the response — like sending a RST to close a half-open connection.
+
+`sendp()` sends a packet at Layer 2 (Ethernet level) and does not wait for a response. Use this when you need to send a raw Ethernet frame, such as in ARP operations.
+
+`sr()` sends packets at Layer 3 and waits for responses. It returns two lists: answered (matched request-response pairs) and unanswered (requests with no response). Use this for scanning multiple targets simultaneously and processing all responses.
+
+`sr1()` sends one packet at Layer 3 and waits for one response. Returns the single response packet (or None if no response). Use this when you are testing a single port or target and want to check the response before proceeding.
+
+`srp()` and `srp1()` are the Layer 2 equivalents of `sr()` and `sr1()`. Use these for ARP operations and any other scenarios requiring Ethernet-level packet construction.
+
+```python
+from scapy.all import *
+
+# ============================================================
+# BUILDING AND INSPECTING PACKETS
+# ============================================================
+
+# See all fields available in a layer
+ls(IP)           # Shows every IP header field and its default
+ls(TCP)          # Shows every TCP header field and its default
+ls(UDP)
+ls(ICMP)
+ls(ARP)
+ls(DNS)
+
+# Build a basic packet and inspect it
+packet = IP(dst="10.10.10.50") / TCP(dport=80, flags="S")
+
+# .show() displays the packet in a human-readable structured format
+packet.show()
+
+# .show2() is like .show() but computes checksums and lengths first
+packet.show2()
+
+# hexdump() shows the raw bytes
+hexdump(packet)
+
+# len() shows total packet size in bytes
+print(f"Packet size: {len(packet)} bytes")
+
+
+# ============================================================
+# ICMP OPERATIONS
+# ============================================================
+
+# Simple ping
+target = "10.10.10.50"
+ping_pkt = IP(dst=target) / ICMP()
+
+# sr1() sends the packet and waits for ONE response
+response = sr1(ping_pkt, timeout=2, verbose=False)
+
+if response:
+    print(f"Host {target} is alive")
+    print(f"TTL: {response[IP].ttl}")
+    print(f"Response type: {response[ICMP].type}")  # 0 = echo reply
+else:
+    print(f"No response from {target}")
+
+# Ping sweep of entire subnet
+def ping_sweep(network):
+    # IP(dst=network) with a CIDR range creates a packet for each IP
+    packets = IP(dst=network) / ICMP()
+    answered, unanswered = sr(packets, timeout=2, verbose=False)
+    
+    print(f"\nResults for {network}:")
+    print(f"Live hosts: {len(answered)}")
+    print(f"No response: {len(unanswered)}")
+    
+    for sent_pkt, reply_pkt in answered:
+        ttl = reply_pkt[IP].ttl
+        src = reply_pkt[IP].src
+        
+        # OS estimation from TTL
+        if ttl <= 64:
+            os_guess = "Linux/Unix"
+        elif ttl <= 128:
+            os_guess = "Windows"
+        else:
+            os_guess = "Network device"
+        
+        print(f"  [+] {src:<20} TTL={ttl:<5} Probably: {os_guess}")
+
+ping_sweep("10.10.10.0/24")
+
+
+# ============================================================
+# TCP OPERATIONS
+# ============================================================
+
+# Full SYN scan implementation
+def custom_syn_scan(target, ports):
+    print(f"\nScanning {target} ports: {min(ports)}-{max(ports)}")
+    open_ports = []
+    closed_ports = []
+    filtered_ports = []
+    
+    for port in ports:
+        # Build SYN packet
+        # RandShort() generates a random source port (avoids confusion)
+        pkt = IP(dst=target) / TCP(dport=port, flags="S", sport=RandShort())
+        
+        response = sr1(pkt, timeout=1, verbose=False)
+        
+        if response is None:
+            filtered_ports.append(port)
+            
+        elif response.haslayer(TCP):
+            flags = response[TCP].flags
+            
+            # "SA" = SYN-ACK = port is OPEN
+            if flags == "SA" or flags == 0x12:
+                open_ports.append(port)
+                
+                # Send RST to avoid leaving half-open connections on target
+                # Half-open connections consume resources on the target
+                rst = IP(dst=target) / TCP(
+                    dport=port, 
+                    sport=response[TCP].dport,
+                    flags="R",
+                    seq=response[TCP].ack
+                )
+                send(rst, verbose=False)
+                
+            # "RA" or "R" = RST = port is CLOSED
+            elif "R" in str(flags):
+                closed_ports.append(port)
+    
+    print(f"\nOpen ports: {open_ports}")
+    print(f"Filtered ports: {len(filtered_ports)}")
+    print(f"Closed ports: {len(closed_ports)}")
+    return open_ports
+
+common_ports = [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 3306, 3389, 5900, 8080]
+open_ports = custom_syn_scan("10.10.10.50", common_ports)
+
+
+# ============================================================
+# UDP OPERATIONS
+# ============================================================
+
+# UDP scan with protocol-specific payloads
+def udp_scan(target, port_payloads):
+    """
+    port_payloads = dict of {port: payload_bytes}
+    Providing protocol-specific payloads dramatically improves accuracy
+    """
+    results = {}
+    
+    for port, payload in port_payloads.items():
+        if payload:
+            pkt = IP(dst=target) / UDP(dport=port) / Raw(payload)
+        else:
+            pkt = IP(dst=target) / UDP(dport=port)
+        
+        response = sr1(pkt, timeout=2, verbose=False)
+        
+        if response is None:
+            results[port] = "open|filtered"
+        elif response.haslayer(UDP):
+            results[port] = "open"
+        elif response.haslayer(ICMP):
+            icmp_type = response[ICMP].type
+            icmp_code = response[ICMP].code
+            if icmp_type == 3 and icmp_code == 3:
+                results[port] = "closed"  # ICMP Port Unreachable
+            else:
+                results[port] = "filtered"
+    
+    for port, state in results.items():
+        if state == "open":
+            print(f"[+] UDP {port}: {state}")
+        elif state == "open|filtered":
+            print(f"[?] UDP {port}: {state}")
+    
+    return results
+
+# Protocol-specific UDP payloads
+udp_targets = {
+    53:  b"\x00\x00\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07version\x04bind\x00\x00\x10\x00\x03",  # DNS version query
+    161: b"\x30\x26\x02\x01\x01\x04\x06public\xa0\x19\x02\x04\x71\xb4\xb5\x60\x02\x01\x00\x02\x01\x00\x30\x0b\x30\x09\x06\x05\x2b\x06\x01\x02\x01\x05\x00",  # SNMPv2c GET
+    123: b"\x1b" + b"\x00" * 47,  # NTP client request
+    69:  b"\x00\x01test.txt\x00netascii\x00",  # TFTP read request
+}
+
+udp_scan("10.10.10.50", udp_targets)
+
+
+# ============================================================
+# ARP OPERATIONS
+# ============================================================
+
+# ARP scan of local network segment
+def arp_scan(network):
+    # Ether broadcast + ARP who-has
+    request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=network)
+    
+    # srp() for Layer 2 (need Ethernet header for ARP)
+    answered, _ = srp(request, timeout=3, verbose=False)
+    
+    hosts = []
+    print(f"\nARP scan results for {network}:")
+    print(f"{'IP Address':<18} {'MAC Address':<20} {'Vendor Hint'}")
+    print("-" * 60)
+    
+    for _, response in answered:
+        ip = response[ARP].psrc
+        mac = response[Ether].src
+        
+        # OUI lookup (first 3 octets of MAC)
+        oui = mac[:8].upper()
+        vendor = {
+            "00:50:56": "VMware",
+            "00:0C:29": "VMware Workstation",
+            "08:00:27": "VirtualBox",
+            "B8:27:EB": "Raspberry Pi",
+            "00:1A:A0": "Dell",
+            "00:1E:4F": "Dell",
+            "DC:A6:32": "Raspberry Pi 4",
+            "3C:D9:2B": "Hewlett Packard",
+            "AC:DE:48": "Apple",
+        }.get(oui, "Unknown")
+        
+        print(f"{ip:<18} {mac:<20} {vendor}")
+        hosts.append({'ip': ip, 'mac': mac, 'vendor': vendor})
+    
+    return hosts
+
+hosts = arp_scan("192.168.1.0/24")
+```
+
+---
+
+## 3.2.10 Network Sniffing with Wireshark — The Complete Guide
+
+### Wireshark's Role in Penetration Testing
+
+Wireshark is the world's most widely used network protocol analyzer. It captures network packets in real time — or reads them from previously saved capture files — and provides deep inspection of every layer of every protocol in those packets.
+
+For a penetration tester, Wireshark serves several distinct purposes depending on the phase of the engagement. During active reconnaissance, it lets you analyze the traffic patterns on a network segment you have access to — understanding what protocols are in use, what the "normal" traffic looks like, and identifying interesting communications. During exploitation, it helps verify that your payloads are reaching the target correctly and that responses are coming back. During a man-in-the-middle attack, it captures the decrypted traffic flowing through your machine.
+
+But perhaps most importantly, Wireshark is a learning tool. There is no better way to understand a protocol than to capture real traffic using that protocol and examine each packet in detail. Want to understand exactly how the TLS handshake works? Capture an HTTPS connection and walk through it. Want to understand what NTLM authentication looks like? Capture a Windows login and follow the SMB authentication sequence. The ability to see real protocols in action transforms abstract concepts into concrete, observable behavior.
+
+### Capturing Traffic with Wireshark
+
+When you launch Wireshark with sufficient privileges (root or a user in the `wireshark` group on Linux), you are presented with a list of network interfaces. Selecting an interface and clicking the shark-fin "Start Capturing" button begins recording all packets that the interface receives.
+
+The key question is which interface to use. On a typical Linux penetration testing machine:
+
+`eth0` or `ens33` is the primary Ethernet interface — this is your wired network connection. Choose this for capturing traffic on a wired network segment.
+
+`wlan0` is the wireless interface in normal mode — captures wireless management traffic. For capturing wireless data traffic, you need to put the interface into monitor mode first (using `airmon-ng start wlan0`).
+
+`lo` is the loopback interface — captures traffic between processes on your own machine. Useful for testing locally running services.
+
+After capturing, you save the capture as a `.pcap` or `.pcapng` file for later analysis. This is important for documentation — your captured packets are evidence for your penetration test report.
+
+### The Wireshark Interface
+
+The Wireshark interface has three main panels that work together.
+
+The **Packet List panel** at the top shows each captured packet as one row, with columns for packet number, timestamp, source IP, destination IP, protocol, length, and a brief description. Colors indicate protocol types (green for TCP, blue for DNS, yellow for ARP, etc.) and anomalies (red for errors).
+
+The **Packet Details panel** in the middle shows the dissected structure of the selected packet — every layer expanded into its component fields. This is where you read the actual values of IP TTL, TCP flags, HTTP headers, DNS query names, and every other protocol field.
+
+The **Packet Bytes panel** at the bottom shows the raw bytes of the selected packet in hexadecimal on the left and ASCII on the right. When you click a field in the Packet Details panel, the corresponding bytes are highlighted in the Packet Bytes panel — directly showing you which bytes in the raw packet encode which protocol field.
+
+### Wireshark Display Filters — The Complete Practical Guide
+
+Display filters are what make Wireshark usable on real captures. A busy corporate network generates thousands of packets per second — without filtering, finding anything in the noise is impossible. The filter language allows precise, specific queries.
+
+The syntax follows a consistent pattern: `protocol.field_name operator value`. For example, `ip.src` is the source IP address field in the IP protocol layer. `tcp.flags.syn` is the SYN flag field in the TCP layer. `http.request.method` is the method field in HTTP requests.
+
+Operators include `==` (equals), `!=` (not equals), `>` and `<` (greater/less than), `contains` (string contains substring), and `matches` (regular expression match). Conditions combine with `&&` (AND), `||` (OR), and `!` (NOT).
+
+```
+# ============================================================
+# ESSENTIAL DISPLAY FILTERS FOR PENETRATION TESTING
+# ============================================================
+
+# --- Credential Hunting ---
+
+# HTTP POST requests — these carry login form data
+http.request.method == "POST"
+
+# HTTP traffic containing "password" anywhere in the packet
+http contains "password"
+
+# HTTP Authorization header (Basic Auth sends base64-encoded credentials)
+http.authorization
+
+# FTP login commands — these are always cleartext
+ftp.request.command == "USER" || ftp.request.command == "PASS"
+
+# All Telnet traffic (completely cleartext protocol)
+telnet
+
+# SNMP with community strings visible
+snmp
+
+# NTLM authentication exchanges (Windows credential material)
+ntlmssp
+
+
+# --- Traffic Analysis ---
+
+# All traffic between two specific hosts
+ip.addr == 192.168.1.100 && ip.addr == 10.10.10.50
+
+# All traffic from one source to anywhere
+ip.src == 192.168.1.100
+
+# Traffic from an entire subnet
+ip.src == 192.168.1.0/24
+
+# Traffic on a specific port
+tcp.port == 8080
+udp.port == 161
+
+# All DNS queries (who is this machine looking up?)
+dns.flags.response == 0
+
+# DNS queries for a specific domain
+dns.qry.name contains "internal"
+dns.qry.name == "secretproject.targetco.local"
+
+# All ARP traffic (see who is doing network discovery)
+arp
+
+# ARP requests only (not replies)
+arp.opcode == 1
+
+
+# --- TCP Analysis ---
+
+# New connection initiations (SYN without ACK = start of handshake)
+tcp.flags.syn == 1 && tcp.flags.ack == 0
+
+# Connection resets (can indicate scanning, blocking, or errors)
+tcp.flags.reset == 1
+
+# TCP retransmissions (network issues or dropped packets)
+tcp.analysis.retransmission
+
+# Zero window (receiver cannot accept more data — resource exhaustion)
+tcp.analysis.zero_window
+
+# Large packets (potential file transfer, could be exfiltration)
+tcp.len > 10000 || udp.length > 1000
+
+
+# --- Protocol-Specific ---
+
+# SMB traffic (Windows file sharing, authentication)
+smb || smb2
+
+# SSH traffic (identifies servers offering remote access)
+ssh
+
+# RDP traffic (Remote Desktop)
+rdp
+
+# HTTP error responses (reveals application behavior under stress)
+http.response.code >= 400
+
+# All HTTPS (encrypted, but metadata like SNI and cert subject visible)
+tls
+
+# TLS handshake packets (reveals SNI — Server Name Indication — which
+# hostname the client is trying to connect to, even in encrypted traffic)
+tls.handshake.type == 1
+
+
+# --- Investigation Shortcuts ---
+
+# Everything except your own SSH connection to avoid noise
+!(tcp.port == 22 && ip.addr == 192.168.1.50)
+
+# Find packets referencing specific string (useful for credential hunting)
+frame contains "admin"
+frame contains "password"
+frame contains "secret"
+```
+
+### The Follow Stream Feature — Seeing Conversations
+
+The most powerful single feature in Wireshark for credential capture and data analysis is "Follow Stream." When you right-click any packet in a session and choose "Follow → TCP Stream" (or "HTTP Stream" or "TLS Stream"), Wireshark reassembles the entire conversation between the two parties — every packet, in order, reconstructed into a coherent dialogue.
+
+The display shows client-to-server traffic in one color and server-to-client traffic in another. For an HTTP login transaction, you see the complete HTTP request including all headers and the POST body (which contains the username and password), followed by the complete HTTP response.
+
+For FTP, you see the entire session: the server's greeting, the client's USER command with the username, the server's "331 Password required" response, the client's PASS command with the password in cleartext, and all subsequent file transfer commands.
+
+For Telnet, you see every character typed and every character the server sent back — including the login: and Password: prompts and the keystrokes used to answer them.
+
+This view is often what goes directly into a penetration test report: a screenshot of "Follow TCP Stream" showing cleartext credentials is unambiguous evidence of a critical security finding.
+
+### tcpdump — When Wireshark Is Not Available
+
+Wireshark requires a graphical interface. In many real-world penetration testing scenarios — remote servers accessed via SSH, headless Linux VMs, cloud instances — there is no GUI available. tcpdump is the command-line packet capture tool that provides the same capture capability in pure text form.
+
+tcpdump captures packets and displays them as text, or saves them to `.pcap` files that can be analyzed in Wireshark later. This is the most common professional workflow: use tcpdump to capture on a remote machine over SSH, then transfer the `.pcap` file to your local machine and analyze it in Wireshark.
+
+tcpdump's filtering syntax is BPF (Berkeley Packet Filter) — a powerful filter language also used by the Linux kernel's firewall subsystem. It is different from Wireshark's display filter syntax but follows similar logical principles.
+
+```bash
+# Capture all traffic on eth0 to a file
+sudo tcpdump -i eth0 -w /tmp/capture.pcap
+
+# Capture with a filter — only HTTP and HTTPS traffic
+sudo tcpdump -i eth0 -w /tmp/web_traffic.pcap 'port 80 or port 443'
+
+# Capture to file with timestamps and without DNS resolution
+# -n = no DNS resolution (faster, avoids polluting capture with DNS queries)
+# -nn = no DNS resolution AND no port name resolution (shows 80, not http)
+sudo tcpdump -i eth0 -n -w /tmp/capture.pcap
+
+# Watch traffic in real time — print packets in ASCII
+# -A = print packet in ASCII (great for seeing cleartext credentials)
+sudo tcpdump -i eth0 -A port 80
+
+# Watch traffic in real time — print in hex and ASCII
+# -X = hex + ASCII
+sudo tcpdump -i eth0 -X port 80
+
+# Capture only FTP authentication (always cleartext)
+sudo tcpdump -i eth0 -A 'port 21'
+
+# Capture SNMP traffic to read community strings
+sudo tcpdump -i eth0 -A 'udp port 161'
+
+# Capture between specific hosts
+sudo tcpdump -i eth0 'host 192.168.1.100 and host 192.168.1.1'
+
+# Capture everything EXCEPT SSH (so your own session does not appear)
+sudo tcpdump -i eth0 'not port 22'
+
+# Capture for a time limit then stop
+sudo timeout 60 tcpdump -i eth0 -w /tmp/sixty_second_capture.pcap
+
+# Read and analyze a pcap file with tcpdump
+tcpdump -r /tmp/capture.pcap
+tcpdump -r /tmp/capture.pcap -A 'port 80'
+
+# Extract HTTP POST bodies from a capture file
+tcpdump -r /tmp/capture.pcap -A 'tcp port 80' | grep -A5 "POST"
+
+# Capture with rotation — new file every 100MB, keep last 5 files
+# Prevents capture files from growing indefinitely
+sudo tcpdump -i eth0 -C 100 -W 5 -w /tmp/capture.pcap
+```
+
+### Putting It Together — A Complete Eavesdropping Workflow
+
+The complete workflow for network eavesdropping in an authorized internal penetration test looks like this:
+
+First, you verify you have network access to the target segment — either through physical access (your testing machine is connected to the network) or through a compromised machine that gives you routing access.
+
+Second, if on a switched network without a SPAN port, you set up ARP poisoning to redirect traffic through your machine. You enable IP forwarding so the traffic continues to flow normally — the goal is to intercept, not disrupt.
+
+Third, you start capturing with either Wireshark or tcpdump. If using tcpdump on a remote machine, you start it with output to a file.
+
+Fourth, you let the capture run for a sufficient period to observe normal network activity. Business hours produce much richer captures than off-hours because users are actually doing things — browsing intranet sites, accessing file shares, authenticating to services.
+
+Fifth, you analyze the capture using display filters in Wireshark — hunting for credentials, sensitive data, interesting protocol interactions, and evidence of security weaknesses.
+
+Finally, you document your findings with packet captures and screenshots as evidence, clean up your ARP poisoning to restore normal network operation, and include the findings in your penetration test report.
+
+Every cleartext credential found, every unencrypted sensitive data transmission, every protocol vulnerability revealed through traffic analysis is a documented finding with cryptographically robust evidence: the actual captured packets.
+
+---
 
 ---
