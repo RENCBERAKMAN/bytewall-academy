@@ -11498,4 +11498,680 @@ You learned that countermeasures work not by disabling these psychological mecha
 *COMPLETE*
 *═══════════════════════════════════════════════════════════*
 
+# MODULE 5.1: Exploiting Network-Based Vulnerabilities
+
+## Table of Contents
+
+- [5.1.1 Overview](#511-overview)
+- [5.1.2 Windows Name Resolution and SMB Attacks](#512-windows-name-resolution-and-smb-attacks)
+- [5.1.3 Practice - Windows Name Resolution and SMB Attacks](#513-practice---windows-name-resolution-and-smb-attacks)
+- [5.1.4 Lab - Scanning for SMB Vulnerabilities with enum4linux](#514-lab---scanning-for-smb-vulnerabilities-with-enum4linux)
+- [5.1.5 DNS Cache Poisoning](#515-dns-cache-poisoning)
+- [5.1.6 Practice - DNS Cache Poisoning](#516-practice---dns-cache-poisoning)
+- [5.1.7 SNMP Exploits](#517-snmp-exploits)
+- [5.1.8 SMTP Exploits](#518-smtp-exploits)
+- [5.1.9 Practice - SMTP Commands](#519-practice---smtp-commands)
+- [5.1.10 FTP Exploits](#5110-ftp-exploits)
+- [5.1.11 Pass-the-Hash Attacks](#5111-pass-the-hash-attacks)
+- [5.1.12 Kerberos and LDAP-Based Attacks](#5112-kerberos-and-ldap-based-attacks)
+- [5.1.13 Kerberoasting](#5113-kerberoasting)
+- [5.1.14 On-Path Attacks](#5114-on-path-attacks)
+- [5.1.15 Practice - Kerberos, LDAP, and On-Path Attacks](#5115-practice---kerberos-ldap-and-on-path-attacks)
+- [5.1.16 Lab - On-Path Attacks with Ettercap](#5116-lab---on-path-attacks-with-ettercap)
+- [5.1.17 Route Manipulation Attacks](#5117-route-manipulation-attacks)
+- [5.1.18 DoS and DDoS Attacks](#5118-dos-and-ddos-attacks)
+- [5.1.19 Practice - DoS and DDoS Attacks](#5119-practice---dos-and-ddos-attacks)
+- [5.1.20 Network Access Control (NAC) Bypass](#5120-network-access-control-nac-bypass)
+- [5.1.21 VLAN Hopping](#5121-vlan-hopping)
+- [5.1.22 Practice - NAC Bypass and VLAN Hopping](#5122-practice---nac-bypass-and-vlan-hopping)
+- [5.1.23 DHCP Starvation Attacks and Rogue DHCP Servers](#5123-dhcp-starvation-attacks-and-rogue-dhcp-servers)
+- [5.1.24 Practice - DHCP Starvation and Rogue DHCP Servers](#5124-practice---dhcp-starvation-and-rogue-dhcp-servers)
+
+---
+
+## 5.1.1 Overview
+
+Network-based vulnerability exploitation sits at the intersection of protocol knowledge and attacker creativity. Every attack covered in this section exploits a design decision made by engineers who assumed their protocols would operate in a trusted environment. Understanding this fundamental assumption — that most foundational network protocols were designed for reliability and interoperability, not security — is the lens through which every attack in this module becomes logical rather than magical.
+
+The attacks covered in Module 5.1 operate primarily at Layers 2, 3, 4, and 7 of the OSI model. They target protocols including SMB, DNS, SNMP, SMTP, FTP, Kerberos, LDAP, ARP, BGP, and DHCP. What unites them is not their technical similarity but their philosophical foundation: each one finds the gap between what a protocol was designed to do and what an attacker can make it do instead.
+
+A critical professional mindset to develop before engaging with this content: every technique described here is a dual-use capability. The same Responder tool that a penetration tester uses to capture NTLMv2 hashes in an authorized engagement is used by ransomware operators to move laterally through corporate networks. Understanding the attack deeply is the prerequisite for defending against it effectively. You cannot build detection rules for behavior you do not understand.
+
+**The Attack Surface of a Corporate Network**
+
+When a penetration tester gains their first foothold inside a corporate network — through phishing, a web application vulnerability, VPN credential theft, or physical access — they are typically positioned as a standard user on one workstation in one network segment. From that position, the attacks in this module are the tools used to expand that foothold into domain-wide compromise. This process is called lateral movement, and the attacks in 5.1 are its primary mechanisms.
+
+The typical attack chain inside a corporate network looks like this: initial access on one endpoint leads to local credential harvesting, which enables lateral movement to additional systems, which exposes more credentials, which eventually reaches a domain controller, at which point the entire Active Directory environment is considered compromised. Module 5.1 covers the network-level techniques that make this chain possible.
+
+---
+
+## 5.1.2 Windows Name Resolution and SMB Attacks
+
+### Understanding Windows Name Resolution
+
+Before understanding why Windows name resolution attacks are so powerful, you need to understand how Windows resolves names to IP addresses — because it does not simply use DNS.
+
+When a Windows machine needs to resolve a hostname to an IP address, it follows a specific resolution order. First it checks its local hosts file at C:\Windows\System32\drivers\etc\hosts. If not found there, it queries DNS. If DNS fails or returns no result, Windows falls back to a legacy protocol called LLMNR (Link-Local Multicast Name Resolution). If LLMNR also fails, Windows tries NBT-NS (NetBIOS Name Service).
+
+This fallback behavior is the attack surface. When a Windows machine fails to resolve a name via DNS and broadcasts an LLMNR or NBT-NS query asking "does anyone know the IP for this hostname?", any machine on the same local network segment can respond. There is no authentication, no verification, no challenge. If an attacker's machine responds first with "yes, I'm that host, here's my IP," the victim will believe the response and attempt to connect to the attacker's machine.
+
+### LLMNR Poisoning — The Attack Mechanism
+
+LLMNR (Link-Local Multicast Name Resolution) operates on UDP port 5355 and uses multicast addressing (224.0.0.252 for IPv4, FF02::1:3 for IPv6). When a Windows host cannot resolve a hostname via DNS, it broadcasts an LLMNR query to the entire local network segment.
+
+The attack flow works as follows. A user on the victim machine attempts to access a network resource — perhaps they mistype a UNC path like \\FileServr\share (with a typo) instead of \\FileServer\share. DNS cannot resolve "FileServr" because it does not exist. Windows sends an LLMNR multicast query asking all hosts on the local segment: "Who is FileServr?" The attacker's machine, running a tool like Responder, receives this multicast query and immediately responds: "I am FileServr." The victim's machine accepts this response and initiates a connection to the attacker. During this connection attempt, the victim's machine automatically sends Windows authentication credentials — specifically an NTLMv2 challenge-response hash — to authenticate to what it believes is the legitimate file server.
+
+The attacker does not receive the plaintext password. They receive an NTLMv2 hash, which is a cryptographic response to a challenge. This hash can then be used in two ways: it can be cracked offline using tools like Hashcat or John the Ripper to recover the original plaintext password, or it can be used directly in a Pass-the-Hash attack (covered in 5.1.11) without ever cracking it.
+
+### NBT-NS Poisoning
+
+NBT-NS (NetBIOS Name Service) is an older Microsoft name resolution protocol operating on UDP port 137. It follows the same fundamental pattern as LLMNR — when a hostname cannot be resolved, Windows broadcasts a NBT-NS query. The attack mechanism is identical: Responder listens for these broadcasts and responds with poisoned answers, capturing NTLMv2 hashes from victims who attempt to authenticate.
+
+NBT-NS is older and being phased out in modern Windows environments, but it remains active by default on most Windows deployments for backwards compatibility. This is a recurring theme in Windows security: legacy protocols remain enabled far beyond their useful lifetime because disabling them risks breaking something somewhere in the environment.
+
+### SMB (Server Message Block) — The Protocol
+
+SMB is Microsoft's file sharing and network resource protocol. It enables Windows machines to share files, printers, and other resources across a network. SMB operates on TCP port 445 in modern implementations (and TCP port 139 in legacy NBT-over-TCP mode).
+
+SMB has had a troubled security history. SMBv1, the original version dating from the 1980s, had fundamental design weaknesses that culminated in the EternalBlue vulnerability (CVE-2017-0144). SMBv2 and SMBv3 introduced significant security improvements including mandatory signing options and encryption, but the legacy of SMBv1 — still enabled on countless systems worldwide — continues to provide attack surface.
+
+### SMB Relay Attacks
+
+SMB relay is a technique where instead of cracking the captured NTLMv2 hash, the attacker relays it in real time to authenticate to another system. When an attacker captures an NTLMv2 authentication attempt (via LLMNR/NBT-NS poisoning), rather than saving the hash for offline cracking, they immediately forward that authentication to another target machine in the network. If the authenticating user has credentials valid on that target machine, the attacker gains access.
+
+This is particularly powerful because it bypasses the need to crack passwords entirely. Even strong, complex passwords are vulnerable to relay attacks because the attacker never needs to know the actual password — they just forward the authentication challenge and response to another system that accepts it.
+
+The critical requirement for SMB relay to work is that SMB signing must be disabled or not required on the target. SMB signing is a security feature that cryptographically signs SMB communications, preventing an attacker from relaying modified authentication attempts. In many environments, SMB signing is not enforced on workstations even when it is enabled on servers. Nmap can identify systems where SMB signing is not required: `nmap --script smb2-security-mode -p 445 <target>`.
+
+### Responder — The Primary Tool
+
+Responder is a Python-based tool included in Kali Linux that simultaneously poisons LLMNR, NBT-NS, and MDNS queries while running fake servers (SMB, HTTP, FTP, LDAP) to capture authentication credentials. Running `responder -I eth0 -rdwv` starts Responder on interface eth0 with rogue DHCP, DNS, WPAD, and verbose output enabled.
+
+Captured hashes are saved to /usr/share/responder/logs/ and can be cracked with `hashcat -m 5600 hash.txt wordlist.txt` where mode 5600 targets NTLMv2 hashes.
+
+### Defensive Countermeasures
+
+Disabling LLMNR via Group Policy (Computer Configuration → Administrative Templates → Network → DNS Client → Turn off multicast name resolution) eliminates the primary attack vector. Disabling NBT-NS on all network adapters removes the secondary vector. Enabling SMB signing across the entire environment prevents relay attacks even when hashes are captured. Network segmentation ensures that a compromised endpoint in one VLAN cannot send LLMNR queries that reach endpoints in other VLANs.
+
+---
+
+## 5.1.3 Practice — Windows Name Resolution and SMB Attacks
+
+### Lab Environment Setup
+
+Practicing LLMNR/NBT-NS poisoning requires a controlled lab environment with at least two machines: an attacker (Kali Linux) and a victim (Windows). Both must be on the same network segment with no intervening router, as LLMNR and NBT-NS use multicast/broadcast addressing that does not cross router boundaries.
+
+Recommended lab setup: Kali Linux VM on Host-Only or Internal Network adapter, Windows 10 VM on the same Host-Only or Internal Network adapter. This ensures both are on the same segment without any internet connectivity (important for safety in a lab — you do not want to be running Responder on a network segment with real users).
+
+### Step-by-Step Attack Walkthrough
+
+On the Kali machine, start Responder: `sudo responder -I eth0 -rdwv`. Responder will display its startup banner showing which servers and poisoning methods are active. On the Windows victim machine, open File Explorer and attempt to access a non-existent UNC path: `\\NonExistentServer\share`. Windows will fail DNS resolution and fall back to LLMNR. Responder on Kali will capture the authentication attempt and display the NTLMv2 hash in the terminal output.
+
+The captured hash looks like: `[SMB] NTLMv2 Hash : Administrator::WORKGROUP:1122334455667788:...`. Copy this hash to a file and attempt offline cracking: `hashcat -m 5600 captured.txt /usr/share/wordlists/rockyou.txt`.
+
+### Verifying SMB Signing Status
+
+Before attempting relay attacks, identify which systems do not require SMB signing: `nmap --script smb2-security-mode.nse -p 445 <network_range>`. Systems showing "Message signing enabled but not required" are vulnerable to relay attacks.
+
+For relay attacks, use ntlmrelayx from Impacket: `python3 ntlmrelayx.py -tf targets.txt -smb2support`. When a victim authenticates via LLMNR poisoning, ntlmrelayx automatically relays the credentials to all targets in targets.txt, dumping SAM hashes from any system where the credentials are valid.
+
+---
+
+## 5.1.4 Lab — Scanning for SMB Vulnerabilities with enum4linux
+
+### What is enum4linux?
+
+enum4linux is a Linux tool for enumerating information from Windows and Samba systems using SMB. It is essentially a wrapper around multiple Samba tools (smbclient, rpcclient, net, nmblookup) that automates the process of extracting as much information as possible from an SMB target.
+
+What enum4linux can reveal from a target system is remarkable in scope: operating system version and build number, domain or workgroup membership, list of all local users and their RIDs (Relative Identifiers), list of all local groups and their members, list of all network shares including hidden shares, password policy details (minimum length, complexity requirements, lockout threshold and duration), printer information, and domain SID (Security Identifier).
+
+This information is invaluable for attack planning. Knowing the password policy tells an attacker whether brute-force or password spraying is viable. Knowing all usernames provides the target list for credential attacks. Knowing share names and permissions reveals what data is accessible. All of this is gathered without exploiting any vulnerability — it relies on legitimate SMB functionality that Windows exposes for administrative purposes.
+
+### Running enum4linux
+
+Basic usage: `enum4linux -a <target_ip>` runs all enumeration checks. The `-a` flag is a comprehensive mode covering users, shares, groups, password policy, OS information, and domain information simultaneously.
+
+Individual options for targeted enumeration include `-U` for user list, `-S` for share list, `-P` for password policy, `-G` for group list, `-o` for OS information, and `-i` for printer information.
+
+A full enum4linux run against a Windows target with null session access (anonymous authentication) produces extensive output. In older Windows environments (pre-Windows 2008 with default hardening), null sessions allowed complete enumeration without any credentials. Modern Windows environments restrict anonymous access by default, but many enterprise environments still have legacy systems or misconfigured Group Policies that allow it.
+
+### Interpreting enum4linux Output
+
+The most valuable sections of enum4linux output are the user list, which provides usernames for subsequent password attacks; the password policy, which determines attack strategy; and the share list, which reveals accessible network resources.
+
+A password policy showing minimum length of 0, no complexity requirements, and no lockout threshold indicates the environment is vulnerable to brute-force attacks. A policy showing lockout after 5 attempts indicates that password spraying (trying one password against many accounts) is safer than traditional brute-force.
+
+### SMB Vulnerability Scanning with Nmap NSE Scripts
+
+Nmap's SMB-related NSE scripts provide additional vulnerability identification beyond enum4linux. Key scripts include `smb-vuln-ms17-010` (checks for EternalBlue), `smb-vuln-ms08-067` (checks for the MS08-067 vulnerability exploited by Conficker), `smb-enum-shares` (enumerates accessible shares), `smb-enum-users` (enumerates users), and `smb-os-discovery` (identifies OS version via SMB).
+
+Running `nmap --script smb-vuln-ms17-010 -p 445 <target>` against a Windows 7 or Server 2008 R2 system without the MS17-010 patch will return a finding indicating the system is vulnerable to EternalBlue — the vulnerability exploited by WannaCry and NotPetya.
+
+---
+
+## 5.1.5 DNS Cache Poisoning
+
+### How DNS Works — The Foundation for Understanding the Attack
+
+DNS (Domain Name System) is the distributed naming system that translates human-readable domain names into IP addresses. The system is hierarchical: when your computer needs to resolve google.com, it asks your configured DNS resolver (usually your ISP or organization's DNS server), which in turn queries root nameservers, then TLD nameservers, then the authoritative nameserver for google.com. The response travels back through this chain to your resolver, which caches the result for the duration specified by the record's TTL (Time to Live) value.
+
+This caching is the attack surface for DNS cache poisoning. A DNS resolver caches responses to avoid querying the full hierarchy every time. If an attacker can inject a fraudulent response into this cache, every user of that resolver will receive the poisoned answer for as long as the TTL lasts — potentially hours or days.
+
+### The Kaminsky Attack — Why DNS Cache Poisoning Was a Critical Vulnerability
+
+In 2008, security researcher Dan Kaminsky disclosed a fundamental flaw in DNS that made cache poisoning dramatically easier than previously understood. Before the Kaminsky disclosure, poisoning a DNS cache required either being positioned to intercept DNS traffic (a man-in-the-middle position) or winning a "birthday attack" against the 16-bit transaction ID — a 1-in-65536 chance per query.
+
+Kaminsky's insight was that an attacker could force a resolver to make thousands of DNS queries for random subdomains (like random1.example.com, random2.example.com, etc.) and simultaneously send thousands of forged responses guessing the transaction ID. Because the resolver had to look up each random subdomain with the authoritative nameserver, the attacker could flood it with forged "authoritative" responses containing not just the fake answer for the random subdomain but also a poisoned NS (nameserver) record for the entire domain. When the attacker's guess matched the transaction ID, the poisoned NS record entered the cache, redirecting all subsequent queries for the entire domain to the attacker's controlled nameserver.
+
+The fix, rapidly deployed across the internet, was source port randomization — using random source UDP ports for DNS queries in addition to random transaction IDs, expanding the search space from 65,536 to approximately 65,536 × 65,536 = over 4 billion combinations. This made blind poisoning attacks impractical but not theoretically impossible.
+
+### Modern DNS Cache Poisoning Techniques
+
+While the Kaminsky attack style has been largely mitigated, DNS poisoning remains relevant in several contexts.
+
+On-path poisoning requires a man-in-the-middle position — the attacker intercepts DNS queries between a client and its resolver and injects forged responses. This is practically achieved through ARP poisoning (covered in 5.1.14) to create the MITM position.
+
+Rogue DNS server deployment involves placing a malicious DNS server on the network that responds to DNS queries before the legitimate server. This is achieved through rogue DHCP servers (covered in 5.1.23) that distribute the attacker's server as the DNS resolver.
+
+BGP hijacking (covered in 5.1.17) at the routing level can redirect DNS traffic to attacker-controlled infrastructure at a global scale.
+
+### DNSSEC and Its Limitations
+
+DNSSEC (DNS Security Extensions) addresses cache poisoning by adding cryptographic signatures to DNS records. A DNSSEC-validating resolver verifies these signatures before accepting responses, making forged responses detectable. However, DNSSEC deployment remains incomplete across the internet, and many organizations' internal DNS infrastructure does not use DNSSEC at all. An attacker on an internal network targeting internal DNS servers is rarely constrained by DNSSEC.
+
+### Practical Impact of DNS Poisoning
+
+Successful DNS cache poisoning allows an attacker to redirect users from legitimate websites to attacker-controlled lookalike pages — enabling credential theft through phishing. Email traffic can be redirected by poisoning MX records, allowing the attacker to intercept or read corporate email. Certificate issuance for HTTPS can potentially be manipulated by poisoning DNS for domains used in CA domain validation challenges.
+
+---
+
+## 5.1.6 Practice — DNS Cache Poisoning
+
+### Tools for DNS Poisoning Practice
+
+In a controlled lab environment, DNS poisoning is practiced using a combination of ARP poisoning tools (to create the MITM position) and DNS spoofing tools (to inject forged responses).
+
+Ettercap (covered in depth in 5.1.16) includes a dns_spoof plugin that intercepts DNS queries from poisoned ARP victims and returns forged responses. dnschef is a flexible DNS proxy and spoofer that can selectively respond to specific domain queries with attacker-controlled IP addresses while passing all other queries to the legitimate resolver.
+
+A practical lab flow: establish an ARP poisoning MITM position between a victim and their router (covered in 5.1.14), then intercept DNS queries using Wireshark to observe the query patterns, then use dnschef or Ettercap's dns_spoof plugin to inject forged responses for target domains.
+
+### Verifying Poisoning Success
+
+After DNS poisoning, the victim's DNS resolution for the targeted domain should return the attacker's IP. Verify on the victim machine by running `nslookup targetdomain.com` — if poisoning was successful, the response will show the attacker's IP rather than the legitimate one. Opening the targeted domain in a browser should load whatever content the attacker is serving on their machine.
+
+---
+
+## 5.1.7 SNMP Exploits
+
+### SNMP Architecture and Security Model
+
+SNMP (Simple Network Management Protocol) is the standard protocol for network device monitoring and management. Network administrators use SNMP to collect performance metrics, configuration data, and operational status from routers, switches, printers, servers, and virtually any network-connected device. SNMP operates on UDP port 161 for queries and UDP port 162 for traps (unsolicited notifications from devices).
+
+The MIB (Management Information Base) is a hierarchical database structure that organizes all the information a device exposes via SNMP. Each piece of information has an OID (Object Identifier) — a dotted-decimal identifier like 1.3.6.1.2.1.1.1.0 that uniquely identifies that specific data point. The OID 1.3.6.1.2.1.1.1.0 is the sysDescr — the system description string that typically reveals the device model and operating system.
+
+### The Authentication Problem in SNMPv1 and SNMPv2c
+
+SNMPv1 and SNMPv2c use "community strings" for authentication — essentially plaintext passwords that are included in every SNMP packet. There are conventionally two community strings: the read community string (allowing read-only access to the MIB) and the write community string (allowing modification of device configuration).
+
+The universal default values — "public" for read access and "private" for write access — are so widely known and so frequently left unchanged that they represent one of the most reliable attack vectors in network penetration testing. A significant proportion of network infrastructure in real-world enterprise environments — routers, switches, printers, environmental sensors, UPS devices — still uses default SNMP community strings decades after the vulnerabilities were first documented.
+
+With read access via SNMP, an attacker can enumerate: the complete routing table (revealing internal network topology), the ARP cache (revealing active hosts and their MAC addresses), the interface table (revealing all network interfaces and their configurations), the list of running processes on SNMP-enabled servers, installed software on Windows systems via SNMP extensions, and device configurations on network equipment.
+
+Write access via SNMP is catastrophically worse — it allows modification of device configurations. On routers and switches, SNMP write access has been used to change routing tables, modify ACLs, and alter spanning tree configurations.
+
+### SNMPv3 and Its Security Improvements
+
+SNMPv3 introduced proper authentication (HMAC-MD5 or HMAC-SHA) and privacy (encryption via DES or AES). When properly configured, SNMPv3 addresses the authentication weaknesses of earlier versions. However, SNMPv3 adoption remains incomplete — many devices do not support it, many network teams have not migrated, and many deployments use SNMPv3 without enabling privacy (encryption), meaning traffic is still readable even if authentication is secure.
+
+### SNMP Enumeration Tools
+
+snmpwalk is the primary tool for SNMP enumeration, traversing the entire MIB tree from a starting OID: `snmpwalk -v2c -c public <target_ip>` dumps the entire MIB using SNMPv2c with community string "public."
+
+snmp-check is a more user-friendly tool that formats SNMP data into organized sections: `snmp-check -c public <target_ip>` returns system information, network interfaces, routing tables, TCP connections, and process lists in readable format.
+
+Nmap's SNMP NSE scripts provide targeted enumeration: `nmap -sU -p 161 --script snmp-info,snmp-interfaces,snmp-netstat,snmp-processes <target>`.
+
+### Brute-Forcing SNMP Community Strings
+
+When the default community strings do not work, brute-forcing with a wordlist is often effective because organizations frequently use simple, guessable community strings. onesixtyone is a fast SNMP scanner and community string brute-forcer: `onesixtyone -c community_strings.txt <target_ip>`. Hydra also supports SNMP: `hydra -P /usr/share/wordlists/rockyou.txt <target> snmp`.
+
+---
+
+## 5.1.8 SMTP Exploits
+
+### The SMTP Protocol
+
+SMTP (Simple Mail Transfer Protocol) is the standard protocol for sending email, operating on TCP port 25 (server-to-server), TCP port 587 (client-to-server with authentication, called submission), and historically TCP port 465 (SMTPS, implicit TLS). SMTP is a text-based protocol — commands are plaintext ASCII strings, making it easy to interact with manually using telnet or netcat.
+
+SMTP's design predates modern security thinking. The original protocol had no authentication, no encryption, and no verification of sender identity. While modern SMTP deployments add authentication (SMTP AUTH), TLS encryption, and sender verification mechanisms (SPF, DKIM, DMARC), many deployments remain misconfigured, and legacy servers still lack proper controls.
+
+### SMTP User Enumeration
+
+Two SMTP commands enable user enumeration on misconfigured mail servers: VRFY and EXPN.
+
+The VRFY command asks the mail server to verify whether a given email address or username exists: `VRFY administrator` returns either a positive response confirming the user exists or a negative response. On properly configured servers, VRFY is disabled. On misconfigured servers, it returns valid vs. invalid user status, allowing an attacker to build a valid username list by iterating through potential names.
+
+The EXPN command expands a mailing list alias, revealing all members: `EXPN staff` might return a list of all email addresses in the staff mailing list. This is even more useful for enumeration as it can reveal user accounts that might not be guessable.
+
+The RCPT TO command can also be used for enumeration — sending a test message to a recipient address and observing whether the server returns a "550 User unknown" error (user does not exist) versus accepting the message. This works even on servers that have disabled VRFY and EXPN.
+
+### Open Relay Exploitation
+
+An SMTP open relay is a mail server that allows anyone to send email through it to any destination — it does not restrict who can send mail or to where. Open relays were common in the early internet era and are now recognized as a critical misconfiguration because they enable spam sending and phishing at scale.
+
+Testing for open relay: connect to the SMTP server and attempt to send a message with a from address at a different domain than the server manages and a recipient at yet another domain. If the server accepts this (returns "250 OK" rather than rejecting it), it is an open relay.
+
+### SMTP Authentication Attacks
+
+Modern SMTP servers require AUTH LOGIN or AUTH PLAIN authentication before accepting email from clients. These authentication mechanisms can be brute-forced: `hydra -l admin@target.com -P /usr/share/wordlists/rockyou.txt smtp://<target>`.
+
+SMTP credentials captured in network traffic (when TLS is not used) or through LLMNR/NBT-NS poisoning can be used directly to authenticate to the mail server and send email as legitimate users — enabling sophisticated phishing campaigns that originate from trusted internal addresses.
+
+---
+
+## 5.1.9 Practice — SMTP Commands
+
+### Manual SMTP Interaction
+
+Understanding SMTP at the command level is essential for security professionals because it enables direct interaction with mail servers for testing without automated tools. Connect to an SMTP server using netcat: `nc <target_ip> 25`. The server responds with a banner identifying itself. Send `EHLO attacker.com` to initiate the session and receive the list of supported extensions (AUTH methods, SIZE limits, STARTTLS availability).
+
+A complete manual email sending session: EHLO identifies the sender's domain. MAIL FROM establishes the envelope sender. RCPT TO establishes the recipient. DATA begins the message body (terminated with a period on a line by itself). QUIT ends the session.
+
+Testing VRFY: after EHLO, type `VRFY administrator` and observe the response. A 252 response means the server cannot verify but will accept delivery (not useful for enumeration). A 550 response means the user does not exist. A 250 response with the full email address means the user exists and VRFY is enabled.
+
+### Automated SMTP Enumeration
+
+smtp-user-enum is a specialized tool for SMTP user enumeration: `smtp-user-enum -M VRFY -U userlist.txt -t <target>` tests each username in the list using the VRFY method. The `-M` flag accepts VRFY, EXPN, or RCPT to specify the enumeration method.
+
+Metasploit includes the smtp_enum auxiliary module: `use auxiliary/scanner/smtp/smtp_enum`, set RHOSTS to the target, RPORT to 25, and USER_FILE to a username wordlist, then run.
+
+---
+
+## 5.1.10 FTP Exploits
+
+### FTP Security Weaknesses
+
+FTP (File Transfer Protocol) was designed in 1971 with no security whatsoever. It transmits all data — including usernames, passwords, and file contents — in plaintext. It operates on two TCP ports simultaneously: port 21 for the control connection (commands and responses) and a dynamically assigned port for data transfer (active mode uses port 20 from the server, passive mode uses a negotiated high port).
+
+The complete absence of encryption is the defining security characteristic of FTP. Any attacker with a man-in-the-middle position on the network can capture FTP credentials and all transferred file contents in plaintext. Wireshark captures FTP traffic trivially — credentials appear in clear text in the control channel.
+
+### Anonymous FTP Access
+
+Many FTP servers are configured to allow anonymous authentication — login with username "anonymous" and any email address as the password (traditionally). Anonymous FTP was designed for public file distribution but is frequently misconfigured to allow write access or to expose sensitive directories.
+
+Testing anonymous access: `ftp <target_ip>`, enter "anonymous" as the username and any string as the password. If accepted, enumerate accessible directories with `ls -la` and download interesting files with `get filename`. The ability to write files to an FTP server can enable web shell deployment if the FTP directory overlaps with a web server's document root.
+
+### FTP Bounce Attacks
+
+The FTP PORT command in active mode specifies the IP address and port where the server should send data. By specifying a third-party host's IP and an interesting port, an attacker can use the FTP server as a proxy to scan other hosts — the FTP server initiates connections to the specified destinations, appearing as the originating source. This can be used to bypass firewall rules and scan internal network services from a position inside a firewall. Most modern FTP servers restrict PORT commands to the client's own IP address to prevent bounce attacks.
+
+### FTP Vulnerability Exploitation
+
+Beyond configuration weaknesses, specific FTP server software versions have had critical vulnerabilities. The ProFTPD 1.3.3c backdoor (CVE-2010-4221) is a classic example: a compromised version of ProFTPD was distributed that included a backdoor triggered by specific input. Metasploit includes the `exploit/unix/ftp/proftpd_133c_backdoor` module for this.
+
+vsftpd 2.3.4, another widely-deployed FTP server, had a backdoor introduced in a compromised source package (CVE-2011-2523) that opened a root shell on port 6200 when a smiley face ":)" was appended to the username during login. This is a standard exercise in Metasploit labs.
+
+---
+
+## 5.1.11 Pass-the-Hash Attacks
+
+### Understanding NTLM Authentication
+
+To understand Pass-the-Hash, you must first understand how Windows NTLM authentication works. When a Windows user logs in, their password is never stored as plaintext — instead, Windows stores the NTLM hash (an MD4 hash of the UTF-16 encoded password) in the SAM database (for local accounts) or the NTDS.DIT database (for domain accounts).
+
+When a user authenticates to a network resource using NTLM, the authentication process is a challenge-response mechanism: the client sends a negotiation message identifying its capabilities, the server responds with a challenge (a random 8-byte value), and the client responds by hashing the NTLM hash with the challenge using the HMAC-MD5 function. The server verifies this response by performing the same calculation with the stored hash. Crucially, the actual password is never transmitted — only the hash response to a challenge.
+
+### The Attack
+
+Pass-the-Hash exploits a critical design characteristic: Windows NTLM authentication uses the password hash as the authentication secret, not the password itself. If an attacker obtains the NTLM hash (from a memory dump of LSASS, from the SAM database, from a domain controller's NTDS.DIT), they can use that hash directly to authenticate — without ever knowing the actual password.
+
+The classic tool for Pass-the-Hash is the Mimikatz suite, specifically its `sekurlsa::pth` command: `sekurlsa::pth /user:Administrator /domain:CORP /ntlm:<hash> /run:cmd.exe`. This spawns a command prompt authenticated as the specified user using the provided hash.
+
+Additionally, the Impacket suite's psexec.py, smbexec.py, and wmiexec.py all support NTLM hash authentication directly: `python3 psexec.py -hashes :NTLMhash DOMAIN/Administrator@<target_ip>`.
+
+### Hash Harvesting Sources
+
+Before Pass-the-Hash, the hashes must be obtained. The primary sources are LSASS memory (where Windows caches credential information of logged-in users), the local SAM database (containing local account hashes), and the domain's NTDS.DIT file (containing all domain account hashes).
+
+Extracting from LSASS with Mimikatz: `privilege::debug` then `sekurlsa::logonpasswords` dumps all credentials from LSASS memory. This requires administrative privileges on the target system.
+
+Extracting the SAM database: `reg save HKLM\SAM sam.save` and `reg save HKLM\SYSTEM system.save` saves the SAM and SYSTEM hive, which can then be processed with secretsdump.py: `python3 secretsdump.py -sam sam.save -system system.save LOCAL`.
+
+### Pass-the-Hash Detection and Mitigation
+
+Detecting Pass-the-Hash relies on identifying authentication events where the workstation name, source IP, or behavior pattern indicates credential abuse. Windows event logs (specifically Event ID 4624 for successful logon and Event ID 4625 for failed logon) record authentication events, and anomalies like a user authenticating from an unexpected workstation are indicators.
+
+Mitigations include enabling Windows Credential Guard (which uses virtualization-based security to protect LSASS from memory dumping), implementing Protected Users security groups (which disables NTLM for group members), restricting administrative access (reducing the number of accounts whose hashes are worth stealing), and enforcing SMB signing to prevent relay of captured hashes.
+
+---
+
+## 5.1.12 Kerberos and LDAP-Based Attacks
+
+### Kerberos Architecture
+
+Kerberos is the default authentication protocol for Active Directory environments. Understanding its architecture is essential because multiple attacks in this and the following section target specific components of the Kerberos process.
+
+Kerberos authentication involves three parties: the client (the user or computer requesting access), the KDC (Key Distribution Center, running on the domain controller), and the service (the resource the client wants to access). The KDC consists of two logical services: the Authentication Service (AS) and the Ticket Granting Service (TGS).
+
+The Kerberos flow works as follows. The client sends an AS-REQ (Authentication Service Request) to the KDC requesting a TGT (Ticket Granting Ticket). The KDC's AS component verifies the client's identity (using a pre-authentication value encrypted with the client's password hash) and issues a TGT encrypted with the KDC's secret key (the krbtgt account's NTLM hash). The client now holds a TGT that proves their identity to the KDC without re-entering their password.
+
+When the client wants to access a specific service, they send a TGS-REQ (Ticket Granting Service Request) to the KDC's TGS component, presenting their TGT and requesting a service ticket for the specific service. The TGS verifies the TGT and issues a service ticket encrypted with the service account's NTLM hash. The client presents this service ticket to the actual service to authenticate.
+
+### AS-REP Roasting
+
+AS-REP Roasting targets accounts configured with the "Do not require Kerberos preauthentication" attribute. Normally, Kerberos requires the client to prove knowledge of their password before the KDC will issue a TGT — this is preauthentication. When preauthentication is disabled for an account, anyone can request a TGT for that account without knowing the password. The KDC responds with an AS-REP that contains a portion encrypted with the user's password hash.
+
+This encrypted portion can be taken offline and cracked using Hashcat (mode 18200 for AS-REP hashes). The tool GetNPUsers.py from Impacket enumerates accounts without preauthentication and requests their AS-REPs: `python3 GetNPUsers.py DOMAIN/ -usersfile users.txt -no-pass -dc-ip <DC_IP>`.
+
+### LDAP Enumeration and Attacks
+
+LDAP (Lightweight Directory Access Protocol) is the protocol used to query and modify Active Directory. It operates on TCP port 389 (unencrypted) and TCP port 636 (LDAPS, TLS-protected). LDAP queries are the mechanism through which all Active Directory information is accessed — user lists, group memberships, computer objects, GPO settings, and trust relationships.
+
+In many default Active Directory configurations, authenticated domain users can query extensive Active Directory information via LDAP. After obtaining any valid domain credential (even a low-privilege user account), an attacker can use LDAP queries to enumerate the complete domain structure.
+
+ldapdomaindump automates LDAP enumeration and outputs results in HTML, JSON, and grep-able formats: `python3 ldapdomaindump.py -u 'DOMAIN\user' -p 'password' <DC_IP>`. BloodHound, the most powerful Active Directory attack path mapping tool, collects LDAP data using SharpHound (or its Python equivalent) and visualizes it as a graph showing all possible privilege escalation paths from any user to Domain Admin.
+
+### LDAP Null Bind and Anonymous Authentication
+
+Some LDAP implementations allow null bind authentication — connecting without credentials. Older Active Directory deployments and many LDAP implementations (OpenLDAP, Novell eDirectory) may allow anonymous read access to portions of the directory tree. Testing for null bind: `ldapsearch -x -H ldap://<target> -b "dc=domain,dc=com"`. If results return without credentials, anonymous LDAP access is enabled.
+
+---
+
+## 5.1.13 Kerberoasting
+
+### The Concept
+
+Kerberoasting is one of the most impactful and widely used Active Directory attack techniques. It exploits a fundamental characteristic of Kerberos service tickets: any authenticated domain user can request a service ticket for any service registered in Active Directory, and that service ticket is encrypted with the service account's NTLM hash.
+
+When a service is registered in Active Directory, its account is associated with an SPN (Service Principal Name) — an identifier like MSSQLSvc/dbserver.corp.local:1433 that ties the SQL Server service to its service account. Any domain user can request a Kerberos service ticket for any SPN without any special permissions. The resulting service ticket is encrypted with the NTLM hash of the account that owns that SPN.
+
+The attacker requests service tickets for accounts with SPNs and takes those tickets offline for cracking. Because the tickets are encrypted with the service account's password hash, cracking them reveals the service account's plaintext password. Service accounts in many organizations have weak passwords, never expire, and are highly privileged — making Kerberoasting extraordinarily effective.
+
+### Why Service Accounts Are Vulnerable
+
+Service accounts are created to run services (SQL Server, IIS, scheduled tasks, etc.) and are often configured with highly privileged access. They are also often excluded from standard password policies, have passwords that never expire, and are managed by application teams rather than security teams. The combination of high privilege, weak passwords, and infrequent rotation makes service accounts ideal Kerberoasting targets.
+
+### Executing Kerberoasting
+
+GetUserSPNs.py from Impacket requests service tickets for all accounts with SPNs: `python3 GetUserSPNs.py DOMAIN/user:password -dc-ip <DC_IP> -request`. This outputs Kerberos 5 TGS-REP hashes formatted for Hashcat cracking.
+
+In PowerShell from a domain-joined machine: `Invoke-Kerberoast` from PowerSploit or `rubeus.exe kerberoast` from Rubeus enumerate SPNs and request tickets.
+
+Cracking with Hashcat using mode 13100 (Kerberos 5, etype 23 TGS-REP): `hashcat -m 13100 kerberoast_hashes.txt /usr/share/wordlists/rockyou.txt`. With a comprehensive wordlist and rule set, weak service account passwords often crack in minutes.
+
+### Defense Against Kerberoasting
+
+The primary defense is ensuring service account passwords are long (25+ characters), random, and regularly rotated. Microsoft's GMSA (Group Managed Service Accounts) automatically manages service account passwords — setting them to 240-character random values and rotating them automatically, making Kerberoasting cryptographically infeasible against GMSA accounts.
+
+Monitoring for unusual Kerberos TGS-REQ activity — a single account requesting tickets for many SPNs in a short period — provides detection capability. Windows event ID 4769 (Kerberos Service Ticket Request) with RC4 encryption type (0x17) is a high-fidelity indicator of Kerberoasting, as modern Kerberos uses AES encryption by default and RC4 requests indicate downgrade attacks typical of Kerberoasting tools.
+
+---
+
+## 5.1.14 On-Path Attacks
+
+### Definition and Positioning
+
+On-path attacks (historically called man-in-the-middle or MITM attacks) involve an attacker positioning themselves between two communicating parties such that all traffic between them passes through the attacker. From this position, the attacker can passively capture all traffic, actively modify traffic in transit, or selectively inject or suppress packets.
+
+Achieving an on-path position on a switched Ethernet network requires actively manipulating network protocol behavior — the switch normally prevents this by directing frames only to the correct destination port. The primary techniques for establishing an on-path position are ARP poisoning, DHCP manipulation (covered in 5.1.23), and DNS manipulation (covered in 5.1.5).
+
+### ARP Poisoning — The Foundation of LAN On-Path Attacks
+
+ARP (Address Resolution Protocol) maps IP addresses to MAC addresses at Layer 2. When a device needs to send a packet to an IP address on the same local network, it broadcasts an ARP request asking "Who has IP x.x.x.x? Tell me your MAC address." The device with that IP responds with its MAC address, and the requesting device caches this mapping in its ARP table.
+
+ARP has no authentication and no verification mechanism. Any device can send an unsolicited ARP reply claiming any IP-to-MAC mapping, and receivers will update their ARP cache accordingly. This is called a gratuitous ARP reply, and it is the mechanism ARP poisoning exploits.
+
+To establish an on-path position between victim A (IP: 192.168.1.10) and their router (IP: 192.168.1.1), the attacker sends two continuous streams of forged ARP replies: to victim A, saying "192.168.1.1 is at [attacker's MAC]," and to the router, saying "192.168.1.10 is at [attacker's MAC]." Both victim and router update their ARP caches with the attacker's MAC address for each other's IP. Now all traffic from A to the router and from the router to A passes through the attacker's machine, which must be configured to forward packets (IP forwarding enabled) to maintain the connection while intercepting traffic.
+
+### SSL Stripping
+
+With an on-path position established, the attacker faces a significant obstacle: HTTPS traffic is encrypted with TLS, making content interception impossible even with a MITM position. SSL stripping is a technique that downgrades HTTPS connections to HTTP.
+
+The attack works by intercepting the victim's initial HTTP request to a website, performing the HTTPS connection to the server on behalf of the victim, and then serving the content back to the victim over HTTP (unencrypted). The victim receives what appears to be a normal website but over an unencrypted connection, allowing the attacker to see all traffic including credentials.
+
+SSL stripping is mitigated by HSTS (HTTP Strict Transport Security), a policy mechanism that instructs browsers to always use HTTPS for a domain and refuse HTTP connections. However, HSTS only protects users who have previously visited a site (the HSTS policy is delivered via HTTP response header and cached by the browser) — first-time visitors and users who clear their browser cache are still vulnerable.
+
+### Tools for On-Path Attacks
+
+Ettercap is the classic tool for ARP poisoning and on-path attacks, combining ARP poisoning, traffic capture, protocol dissection, and plugin-based attacks: `ettercap -T -i eth0 -M arp:remote /victim_ip/ /router_ip/`.
+
+Bettercap is the modern, more capable successor to Ettercap: `bettercap -iface eth0`, then within the interactive console: `net.probe on` to discover hosts, `arp.spoof.targets <victim_ip>`, `arp.spoof on` to start poisoning, `net.sniff on` to capture traffic.
+
+MITMf (Man-in-the-Middle Framework) combines ARP poisoning with numerous attack plugins including SSL stripping, credential capture, and JavaScript injection.
+
+---
+
+## 5.1.15 Practice — Kerberos, LDAP, and On-Path Attacks
+
+### Building an Active Directory Lab
+
+Practicing Kerberos and LDAP attacks requires an Active Directory lab environment. The minimal setup includes one Windows Server VM configured as a domain controller and one Windows 10 client VM joined to the domain.
+
+Setting up the domain controller: install Windows Server 2019 (evaluation version available free from Microsoft), run `Install-WindowsFeature AD-Domain-Services` in PowerShell, then `Install-ADDSForest -DomainName "corp.local"` to create the domain. Create test user accounts with varying privilege levels and configure some accounts with SPNs for Kerberoasting practice.
+
+From Kali, the Impacket suite provides all necessary tools for attacking this lab environment without needing to be domain-joined.
+
+### Practicing BloodHound
+
+BloodHound is the most important tool for understanding Active Directory attack paths. Install it on Kali with `apt install bloodhound`, set up the neo4j database with `neo4j start`, then access the BloodHound GUI.
+
+Collect data with the Python BloodHound collector: `python3 bloodhound-python -u user -p password -d corp.local -ns <DC_IP> -c All`. This produces JSON files containing all AD objects and their relationships. Import these into BloodHound and use the built-in queries to find "Shortest Path to Domain Admins" — which visually displays every attack path from the current user to Domain Admin.
+
+---
+
+## 5.1.16 Lab — On-Path Attacks with Ettercap
+
+### Ettercap Configuration and Execution
+
+Ettercap is pre-installed on Kali Linux. Before running it, enable IP forwarding to ensure intercepted traffic continues flowing to its destination: `echo 1 > /proc/sys/net/ipv4/ip_forward`.
+
+Launch Ettercap in graphical mode: `ettercap -G`. Select the network interface. Go to Hosts → Scan for Hosts to discover all devices on the network segment. Open the Host List, add the victim's IP to Target 1 and the router's IP to Target 2. Go to Mitm → ARP Poisoning, check "Sniff remote connections," click OK. Go to Start → Start Sniffing.
+
+Ettercap will now intercept all traffic between the victim and the router, displaying captured credentials and protocol information in real time.
+
+### DNS Spoofing with Ettercap's Plugin
+
+Ettercap includes a dns_spoof plugin that intercepts DNS queries from poisoned victims and returns forged responses. Configure the plugin by editing /etc/ettercap/etter.dns and adding entries like `*.targetsite.com A 192.168.1.100` (where 192.168.1.100 is the attacker's IP running a fake web server). Activate the plugin in Ettercap: Plugins → Manage Plugins → dns_spoof → double-click to activate.
+
+Now when the victim attempts to visit targetsite.com, their DNS query is intercepted and the attacker's IP is returned, loading the attacker's fake site instead.
+
+---
+
+## 5.1.17 Route Manipulation Attacks
+
+### BGP Hijacking
+
+BGP (Border Gateway Protocol) is the routing protocol that manages how packets travel across the internet, determining paths between Autonomous Systems (ASes) — the large network blocks operated by ISPs, cloud providers, and large organizations. BGP's design assumes trust between AS peers: when one AS announces that it owns a block of IP addresses, other ASes believe it and update their routing tables accordingly.
+
+BGP hijacking occurs when an AS announces ownership of IP address space that belongs to another AS. All BGP routers that receive this announcement and find it matches or is more specific than their current route will redirect traffic destined for those addresses to the hijacking AS. The attacker can then intercept, inspect, or blackhole that traffic.
+
+The most famous BGP hijacking incidents include the 2010 China Telecom incident where Chinese routing tables briefly captured 15% of internet traffic, the 2008 Pakistan Telecom YouTube blackout (intentional route leak that took YouTube offline globally for hours), and the 2018 Amazon Route 53 BGP hijack used to steal cryptocurrency.
+
+BGP hijacking at the AS level requires control of BGP-speaking infrastructure — a significant barrier. However, BGP misconfigurations within organizational networks (route leaks) can occur without deliberate malice and have been weaponized by sophisticated attackers with access to network infrastructure.
+
+### OSPF and Internal Routing Protocol Attacks
+
+Within large enterprise networks, OSPF (Open Shortest Path First) is commonly used as the internal routing protocol. OSPF uses a link-state algorithm where all routers share topology information and independently calculate the shortest paths. An attacker with access to a network segment where OSPF hellos are transmitted can potentially inject fraudulent OSPF LSAs (Link State Advertisements) to manipulate routing tables — redirecting traffic through attacker-controlled paths.
+
+This requires sending valid OSPF packets, which requires knowledge of the OSPF area ID and authentication (MD5 authentication is common but not universal). Scapy can craft custom OSPF packets for protocol-level attacks in authorized testing scenarios.
+
+---
+
+## 5.1.18 DoS and DDoS Attacks
+
+### Denial of Service — The Concept
+
+A Denial of Service (DoS) attack aims to make a system, service, or network resource unavailable to legitimate users. Unlike other attacks in this module that aim for unauthorized access, DoS attacks aim for unavailability. The impact can be direct financial loss (e-commerce downtime), reputational damage, or used as a distraction while another attack proceeds undetected.
+
+DoS attacks work by exhausting one of three limited resources: bandwidth (flooding the target's network connection), computational resources (overwhelming the CPU or memory), or state (exhausting connection tracking tables or session state).
+
+### SYN Flood — Exploiting TCP's Three-Way Handshake
+
+The SYN flood is the classic resource exhaustion DoS attack, exploiting the stateful nature of TCP connections. When a server receives a SYN packet (the first step of the TCP three-way handshake), it allocates memory for the half-open connection, responds with a SYN-ACK, and waits for the final ACK. This half-open connection remains in memory for typically 75 seconds.
+
+In a SYN flood, the attacker sends thousands of SYN packets per second with spoofed source IP addresses. The server allocates memory for each half-open connection and sends SYN-ACKs to the spoofed addresses (which never complete the handshake). The server's connection table fills completely, preventing legitimate connections from being established. The server appears unresponsive to legitimate users while the attack continues.
+
+SYN cookies are the primary defense: instead of allocating memory immediately on SYN receipt, the server encodes the connection parameters in the SYN-ACK's sequence number. Memory is only allocated when a valid ACK is received — one that includes the correct sequence number derived from the SYN cookie. This means the server only allocates state for connections that complete the handshake.
+
+### UDP Flood and Amplification Attacks
+
+UDP floods send massive volumes of UDP packets to random ports on the target, exhausting bandwidth and forcing the target to generate ICMP "port unreachable" responses for each received packet, further consuming resources.
+
+Amplification attacks use UDP protocols with asymmetric request/response ratios to amplify attack traffic. DNS amplification sends small DNS queries with the victim's spoofed source IP to open DNS resolvers, which return large responses to the victim. The amplification factor for DNS can be 50x-100x. NTP amplification using the monlist command (which returns the last 600 clients) achieves amplification factors over 500x. Memcached amplification achieved factors exceeding 50,000x in 2018 attacks.
+
+### DDoS — Distributed Denial of Service
+
+DDoS distributes the attack traffic across many sources simultaneously, typically a botnet of thousands to hundreds of thousands of compromised devices. This creates several challenges for defense: the total bandwidth can exceed any single upstream mitigation capability, traffic appears to come from legitimate IP addresses distributed globally, and blocking individual source IPs is ineffective.
+
+The Mirai botnet (2016) demonstrated the potential of IoT botnets — 600,000+ compromised cameras, DVRs, and routers generating 1.1 Tbps of traffic against Dyn DNS, taking down Twitter, Netflix, Reddit, and other major services. IoT devices are particularly vulnerable because they run embedded Linux with default credentials, are rarely updated, and are always online.
+
+### Application Layer DoS (Layer 7)
+
+Unlike volumetric attacks that flood with packets, Layer 7 DoS attacks send seemingly legitimate HTTP requests designed to consume disproportionate server resources. A single HTTP request for a complex search query, a large file download, or a computationally expensive API endpoint can consume far more resources than a simple request.
+
+Slowloris attacks establish many connections to a web server and send partial HTTP headers very slowly, keeping connections open without completing requests. The server's connection table fills with these "slow" connections, preventing legitimate connections. This attack requires very little bandwidth on the attacker's side.
+
+---
+
+## 5.1.19 Practice — DoS and DDoS Attacks
+
+### Lab-Safe DoS Testing
+
+DoS attacks must only ever be performed against systems you own or have explicit written permission to test. In a lab environment using VMs on an internal network, DoS testing is safe and educational.
+
+hping3 is the primary tool for crafting DoS test traffic: `hping3 -S --flood -V -p 80 <target_vm_ip>` sends a SYN flood to port 80 of the target VM. The `--flood` flag disables waiting for responses, the `-S` flag sets the SYN bit, and `-V` enables verbose output. Observe the target VM's resource usage in Task Manager (Windows) or `top` (Linux) to see the impact.
+
+For SYN cookies testing: configure the target Linux VM with `sysctl net.ipv4.tcp_syncookies=1` and repeat the hping3 flood — the target should remain responsive to legitimate connections.
+
+### Metasploit Auxiliary DoS Modules
+
+Metasploit includes numerous DoS modules for specific vulnerabilities — not volumetric attacks but protocol-specific conditions that crash specific software versions. These are appropriate for authorized penetration testing to demonstrate that a specific service version is vulnerable to a DoS condition: `use auxiliary/dos/tcp/synflood`, set RHOST and RPORT, run.
+
+---
+
+## 5.1.20 Network Access Control (NAC) Bypass
+
+### What is NAC?
+
+Network Access Control (NAC) is a security technology that enforces policy compliance before allowing devices to connect to a network. When a device connects to a NAC-protected network port, the switch holds the device in an isolated quarantine VLAN until the device proves it meets security requirements — typically running current antivirus, having current OS patches, and being an approved corporate asset.
+
+NAC implementations use 802.1X (Port-Based Network Access Control) as the authentication framework. 802.1X involves three components: the supplicant (the connecting device), the authenticator (the network switch), and the authentication server (typically RADIUS, which validates credentials against Active Directory or a certificate authority).
+
+### MAC Spoofing Bypass
+
+Some NAC implementations use MAC address filtering as a simpler alternative to full 802.1X — only allowing devices whose MAC addresses are in an approved list. MAC address spoofing trivially bypasses this: `ip link set eth0 address AA:BB:CC:DD:EE:FF` changes the interface MAC address on Linux. By spoofing the MAC address of an approved device (discovered through network reconnaissance or physical access), an attacker can gain network access.
+
+### 802.1X Bypass Techniques
+
+More sophisticated 802.1X bypass techniques exploit the gap between when a device connects and when authentication completes, or target the behavior of NAC implementations when a non-supplicant device (one that cannot respond to 802.1X authentication) is connected.
+
+Some organizations configure NAC to fall back to MAC authentication when a device does not respond to 802.1X challenges — intended to accommodate printers and IoT devices that cannot run supplicant software. An attacker can suppress 802.1X responses and rely on MAC authentication bypass instead.
+
+Placing an unauthorized device between an authorized 802.1X authenticated device and the switch allows the unauthorized device to access the authenticated session — some NAC implementations do not detect this "man in the middle" position between the switch and an authenticated endpoint.
+
+---
+
+## 5.1.21 VLAN Hopping
+
+### VLAN Architecture
+
+VLANs (Virtual Local Area Networks) are a network segmentation mechanism that creates logical separation within a physical network infrastructure. Devices in VLAN 10 cannot communicate directly with devices in VLAN 20 without traffic passing through a router or Layer 3 switch — this is the fundamental security property VLANs are designed to provide. Organizations use VLANs to separate guest networks from corporate networks, segment finance from engineering, isolate IoT devices, and create the DMZ for internet-facing servers.
+
+VLAN tags are added to Ethernet frames using the 802.1Q protocol — a 4-byte header addition that includes the VLAN ID (12 bits, allowing VLANs 1-4094) and priority information. Trunk ports (connections between switches or between switches and routers) carry traffic from multiple VLANs simultaneously, with 802.1Q tags distinguishing which VLAN each frame belongs to. Access ports (connections to end devices) belong to a single VLAN and strip the 802.1Q tag before delivering frames to the device.
+
+### Switch Spoofing
+
+Switch spoofing is a VLAN hopping technique that exploits the Dynamic Trunking Protocol (DTP), a Cisco protocol that automatically negotiates trunk port establishment between switches. If a switch port is configured with DTP in "dynamic desirable" or "dynamic auto" mode, it will automatically become a trunk port if the connected device claims to be a switch and requests trunking.
+
+By sending DTP frames, an attacker's device can negotiate a trunk port with the switch. Once trunking is established, the attacker's device can send and receive frames tagged with any VLAN ID, effectively bypassing VLAN segmentation entirely.
+
+The defense is disabling DTP on all ports not intentionally used as trunks: `switchport nonegotiate` and `switchport mode access` on all access ports prevents DTP negotiation.
+
+### Double Tagging
+
+Double tagging is a VLAN hopping technique that does not require DTP and works even against properly configured access ports, but only allows traffic injection into the target VLAN (not receipt of responses).
+
+The attack exploits how some switches handle 802.1Q frames. When a switch receives a frame on an access port in the native VLAN (the VLAN used for untagged traffic on trunk ports), it strips the VLAN tag. If an attacker sends a frame with two 802.1Q tags — an outer tag matching the native VLAN and an inner tag for the target VLAN — the first switch strips the outer tag and forwards the frame (now with only the inner tag) onto the trunk link. The next switch reads the inner tag and delivers the frame to the target VLAN.
+
+The defense is changing the native VLAN to an unused VLAN (not VLAN 1, which is the typical default) and explicitly tagging the native VLAN on all trunk ports.
+
+---
+
+## 5.1.22 Practice — NAC Bypass and VLAN Hopping
+
+### Practicing Switch Spoofing
+
+Practicing VLAN hopping in a lab environment requires a managed switch that supports 802.1Q and DTP, or GNS3/EVE-NG network simulation with Cisco IOS images. Physical switches are preferable for authenticity.
+
+Yersinia is a network attack tool that includes VLAN hopping capabilities via DTP exploitation: `yersinia -G` opens the graphical interface, where DTP attacks can be launched against discovered switches. The tool also supports attacks against STP (Spanning Tree Protocol), CDP (Cisco Discovery Protocol), and DHCP.
+
+### Validating VLAN Segmentation
+
+From a security assessment perspective, VLAN segmentation testing involves attempting to reach hosts in different VLANs from a test position. If successful, a finding is raised indicating VLAN isolation is ineffective. If VLANs are properly configured and DTP is disabled, switch spoofing should fail — no trunk is established and traffic is confined to the access VLAN.
+
+---
+
+## 5.1.23 DHCP Starvation Attacks and Rogue DHCP Servers
+
+### How DHCP Works
+
+DHCP (Dynamic Host Configuration Protocol) automates the assignment of IP addresses to devices joining a network. When a device connects, it broadcasts a DHCPDISCOVER message (since it has no IP address yet and cannot send a directed packet). DHCP servers on the segment respond with DHCPOFFER messages containing offered IP addresses and configuration parameters. The device selects an offer and broadcasts a DHCPREQUEST accepting it. The selected server responds with a DHCPACK confirming the lease.
+
+The configuration delivered by DHCP includes not just the IP address but also the subnet mask, default gateway, DNS server addresses, lease duration, and potentially other parameters. The DNS server and default gateway settings are particularly security-critical: a device accepts these without authentication and uses them for all subsequent network communication.
+
+### DHCP Starvation
+
+DHCP starvation exhausts a DHCP server's address pool by sending a flood of DHCPDISCOVER requests with spoofed MAC addresses. The DHCP server allocates an IP address for each request (since each appears to be a different device), quickly exhausting the available pool. New legitimate devices joining the network cannot obtain IP addresses — they fail to connect.
+
+Yersinia automates DHCP starvation: in the graphical interface, select DHCP and launch the "sending DISCOVER packet" attack. DHCPig is another tool specifically designed for DHCP starvation.
+
+### Rogue DHCP Server Deployment
+
+The second phase of the DHCP attack, often following starvation of the legitimate server, is deploying a rogue DHCP server. The attacker runs their own DHCP server that responds to DHCPDISCOVER requests before the legitimate server can. Since the legitimate server's pool is exhausted (due to the preceding starvation attack, or because the attacker's responses are faster), clients accept the rogue server's offers.
+
+The rogue DHCP server assigns valid IP addresses (from the subnet range) but sets the default gateway to the attacker's machine's IP and the DNS server to the attacker's machine's IP. Every device that accepts this DHCP lease will route all internet traffic through the attacker (enabling on-path position) and resolve all DNS queries through the attacker (enabling DNS poisoning).
+
+Dnsmasq can function as a rogue DHCP server: configure /etc/dnsmasq.conf with the target subnet's DHCP range, set the router option to the attacker's IP, set the DNS option to the attacker's IP, and run `dnsmasq -d`. Metasploit's `auxiliary/server/dhcp` module provides another option.
+
+### DHCP Snooping as the Defense
+
+DHCP snooping is a switch security feature that designates specific ports as "trusted" (connected to legitimate DHCP servers) and all other ports as "untrusted." DHCP server messages (OFFER, ACK, NAK) received on untrusted ports are dropped. Client messages (DISCOVER, REQUEST) are logged and can be rate-limited to prevent starvation. Dynamic ARP Inspection (DAI) builds on DHCP snooping's binding table to validate ARP traffic, preventing ARP poisoning attacks against DHCP snooping-protected devices.
+
+---
+
+## 5.1.24 Practice — DHCP Starvation and Rogue DHCP Servers
+
+### Lab Setup for DHCP Attack Practice
+
+A practical DHCP attack lab requires three components: a legitimate DHCP server (the router or a dedicated DHCP server VM), a Kali Linux attacker VM on the same network segment, and one or more victim VMs that will obtain DHCP leases.
+
+Configure all VMs on the same Internal Network or Host-Only network adapter in VirtualBox. The legitimate DHCP server can be a pfSense VM (a free, open-source router/firewall appliance) or a Linux VM running dnsmasq with DHCP enabled.
+
+### Executing the Attack
+
+Start Wireshark on Kali capturing the network interface — filter for DHCP traffic with the display filter `bootp` (DHCP uses the BOOTP protocol). On a victim VM, release the current DHCP lease (Windows: `ipconfig /release`, Linux: `dhclient -r`) and observe the DHCPDISCOVER broadcast in Wireshark.
+
+Now on Kali, run the DHCP starvation attack with Yersinia for 30-60 seconds. Observe the DHCP server's address pool depleting in its configuration. Release the victim's lease again and request a new one — it should either fail (no addresses available) or potentially receive an offer from the rogue server if deployed.
+
+Deploy the rogue DHCP server on Kali and request a new DHCP lease on the victim. Observe in Wireshark which DHCP server's offer the victim accepts. If the rogue server's offer is accepted, confirm on the victim machine that the default gateway and DNS server are now set to the attacker's IP.
+
+### Observing the Impact
+
+With the on-path position established via rogue DHCP, enable IP forwarding on Kali (`echo 1 > /proc/sys/net/ipv4/ip_forward`), start Bettercap or Ettercap for traffic capture, and browse the web on the victim machine. Observe credentials and traffic appearing in Kali's capture. This demonstrates the complete attack chain from DHCP compromise to credential capture.
+
+---
+
+## Summary
+
+Module 5.1 has covered the complete landscape of network-based vulnerability exploitation, spanning from legacy protocol weaknesses in SMB and FTP to sophisticated Active Directory attacks like Kerberoasting, from Layer 2 ARP poisoning to BGP route manipulation, and from DoS flooding to surgical VLAN segmentation bypass.
+
+The unifying theme is that every attack exploits the gap between a protocol's design assumptions and the adversarial reality of modern networks. Windows name resolution was designed for convenience in trusted networks — attackers use it to capture credentials. Kerberos was designed to eliminate plaintext password transmission — attackers extract encrypted service tickets and crack them offline. DHCP was designed to simplify network configuration — attackers hijack it to redirect all client traffic.
+
+Effective defense against these attacks requires understanding them deeply enough to detect their signatures, configure controls that prevent their prerequisites, and build monitoring that identifies their behavioral patterns. Every detection rule, every Group Policy setting, and every network segmentation decision described in this module's defensive sections is directly derived from understanding the attack it prevents.
+
+The path from understanding these attacks in a lab to defending real networks runs through deliberate practice, careful documentation, and the habit of asking not just "how does this attack work" but "what assumption does this attack break, and how do I make that assumption safe?"
+
+---
+***— End of Module 5, Section 5.1 —***
+
 ---
