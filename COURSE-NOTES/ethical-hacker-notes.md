@@ -12175,3 +12175,593 @@ The path from understanding these attacks in a lab to defending real networks ru
 ***— End of Module 5, Section 5.1 —***
 
 ---
+
+# MODULE 5.2: Exploiting Wireless Vulnerabilities
+
+## Table of Contents
+
+- [5.2.1 Overview](#521-overview)
+- [5.2.2 Rogue Access Points](#522-rogue-access-points)
+- [5.2.3 Evil Twin Attacks](#523-evil-twin-attacks)
+- [5.2.4 Disassociation (Deauthentication) Attacks](#524-disassociation-deauthentication-attacks)
+- [5.2.5 Preferred Network List Attacks](#525-preferred-network-list-attacks)
+- [5.2.6 Wireless Signal Jamming and Interference](#526-wireless-signal-jamming-and-interference)
+- [5.2.7 War Driving](#527-war-driving)
+- [5.2.8 Initialization Vector (IV) Attacks and Unsecured Wireless Protocols](#528-initialization-vector-iv-attacks-and-unsecured-wireless-protocols)
+- [5.2.9 KARMA Attacks](#529-karma-attacks)
+- [5.2.10 Fragmentation Attacks](#5210-fragmentation-attacks)
+- [5.2.11 Practice - IV, Unsecured Wireless, KARMA, and Fragmentation Attacks](#5211-practice---iv-unsecured-wireless-karma-and-fragmentation-attacks)
+- [5.2.12 Credential Harvesting](#5212-credential-harvesting)
+- [5.2.13 Bluejacking and Bluesnarfing](#5213-bluejacking-and-bluesnarfing)
+- [5.2.14 Bluetooth Low Energy (BLE) Attacks](#5214-bluetooth-low-energy-ble-attacks)
+- [5.2.15 Radio-Frequency Identification (RFID) Attacks](#5215-radio-frequency-identification-rfid-attacks)
+- [5.2.16 Password Spraying](#5216-password-spraying)
+- [5.2.17 Exploit Chaining](#5217-exploit-chaining)
+- [5.2.18 Practice - Wireless Attacks](#5218-practice---wireless-attacks)
+
+---
+
+## 5.2.1 Overview
+
+Wireless networks are fundamentally different from wired networks in one critical way: the transmission medium is open air. When you send data over an Ethernet cable, that signal stays inside the cable — a physical boundary exists between your data and the outside world. When you send data over Wi-Fi, that signal travels in every direction simultaneously, passing through walls, floors, ceilings, and the exterior of your building into the parking lot, the street, and neighboring buildings.
+
+This physical characteristic — that radio waves do not respect property boundaries — is the single most important concept for understanding wireless security. Every attack in this module flows from this one reality. An attacker does not need physical access to your building. They do not need to plug into your network. They simply need to be within radio range, which for modern Wi-Fi can be hundreds of meters with a directional antenna.
+
+Think of a wired network like a telephone conversation in a soundproof room — you have to physically enter the room to eavesdrop. A wireless network is like having that same conversation in an open field — anyone within earshot can listen.
+
+### The Radio Frequency Landscape
+
+Wi-Fi operates on specific radio frequency bands. The two primary bands are 2.4 GHz and 5 GHz, with 6 GHz being added for Wi-Fi 6E. These frequencies determine important physical characteristics that affect both usability and security.
+
+The 2.4 GHz band has better range and wall penetration — signals travel farther and pass through physical obstacles more easily. This makes 2.4 GHz networks easier to detect and target from a distance. The 5 GHz band has shorter range but higher data throughput. It does not penetrate obstacles as well, which actually provides a slight security benefit by limiting the physical area where the signal is accessible. However, a directional antenna can overcome this limitation.
+
+Within each band, channels divide the available frequency spectrum. In 2.4 GHz, channels 1-14 are available (varying by country), with channels 1, 6, and 11 being non-overlapping. An attacker scanning for networks can hop between channels to discover all active networks in the area.
+
+### Wi-Fi Standards and Security Evolution
+
+Understanding the Wi-Fi standards timeline helps explain why certain attacks exist and which networks remain vulnerable.
+
+IEEE 802.11b (1999) introduced Wi-Fi at 2.4 GHz with speeds up to 11 Mbps. Security was WEP — now completely broken. IEEE 802.11g (2003) increased speeds to 54 Mbps, still primarily using WEP. IEEE 802.11n (2009) introduced MIMO antennas and speeds up to 600 Mbps with WPA2 becoming standard. IEEE 802.11ac (2013) focused on 5 GHz with gigabit speeds. IEEE 802.11ax (Wi-Fi 6, 2019) introduced OFDMA for better multi-device performance and WPA3 support.
+
+The security protocols — WEP, WPA, WPA2, WPA3 — are separate from the 802.11 standards but critical to the attack landscape. Each represents a generation of security that addressed the weaknesses of the previous generation, imperfectly.
+
+---
+
+## 5.2.2 Rogue Access Points
+
+### What Is a Rogue Access Point?
+
+A rogue access point is any wireless access point connected to a network without the authorization of the network administrator. The word "rogue" means unauthorized — it does not necessarily mean malicious, though it often is.
+
+Imagine a company employee who finds the wired connection at their desk inconvenient. They bring in a consumer Wi-Fi router from home, plug it into the walled Ethernet port, and start broadcasting their own wireless network. From their perspective this seems harmless. What they have actually done is punched a hole in the company's network perimeter. The IT department may have carefully configured the corporate wireless network with WPA2-Enterprise and 802.1X authentication, but this employee's personal router is broadcasting with the default password "admin" — or no password at all. Anyone within range can now connect to the corporate network through this unauthorized entry point, bypassing every security control the company has in place.
+
+This is the rogue access point threat in its accidental form. The deliberate form is far more dangerous: an attacker brings a rogue access point into or near a building, connects it to the network through a compromised Ethernet jack (perhaps in a conference room or reception area where public network access is available), and uses it as a persistent backdoor into the corporate network.
+
+### Physical Deployment Methods
+
+Rogue access points in targeted attacks can be deployed in several creative ways. A small device like a Raspberry Pi with a Wi-Fi adapter can be hidden inside a ceiling tile, under a desk, or inside a fake electrical outlet. These devices draw power from nearby sources and broadcast wirelessly while forwarding traffic through a wired connection. The attacker can access the device remotely — either through the network connection it creates or through a cellular modem — without ever returning to the physical location.
+
+### How the Exploitation Works
+
+Once a rogue AP is deployed and connected to the internal network, an attacker gains everything that a legitimate employee on that network would have: visibility of internal services, ability to communicate with internal systems, and a position from which to launch further attacks. Depending on network segmentation, this might be a restricted guest segment or it might be the full corporate network with access to file servers, databases, and internal applications.
+
+The rogue AP also provides wireless access to the internal network for the attacker or accomplices. If the rogue AP is broadcasting an open network or one with a known password, multiple attackers can connect wirelessly from outside the building without needing to repeat the physical access step.
+
+### Detection and Defense
+
+Organizations detect rogue access points through Wireless Intrusion Detection Systems (WIDS) that continuously scan the air for unauthorized transmissions. Modern enterprise wireless controllers from vendors like Cisco, Aruba, and Meraki include built-in rogue AP detection. When a wireless signal is detected that does not correspond to an authorized access point, the system raises an alert.
+
+802.1X port authentication on every wired port prevents unauthorized devices from connecting to the network — even if someone plugs in a rogue AP, it cannot communicate on the network without authenticating. Regular physical security audits and scanning of wired port utilization also help detect unauthorized devices.
+
+---
+
+## 5.2.3 Evil Twin Attacks
+
+### The Concept
+
+An Evil Twin attack creates a fraudulent access point that mimics a legitimate one. The goal is to get victims to connect to the attacker's access point instead of the real one, placing the attacker in a man-in-the-middle position on all of that victim's wireless communications.
+
+The "Evil Twin" name comes from the idea that the fake network is the evil version of the legitimate twin — identical in appearance, but with malicious intent. Unlike a rogue access point (which connects to the real network), an Evil Twin intercepts traffic between the victim and the internet.
+
+### How Evil Twin Attacks Work — Step by Step
+
+**Step one — Reconnaissance:** The attacker surveys the target environment, identifying the SSID (network name) and BSSID (the access point's MAC address) of the legitimate wireless network they want to impersonate. They also note the channel the legitimate network operates on.
+
+**Step two — Creating the Evil Twin:** The attacker configures their own wireless hardware to broadcast on the same SSID as the legitimate network. Critically, the attacker typically broadcasts at higher power than the legitimate access point, so victims receive a stronger signal from the fake network.
+
+**Step three — Forcing disconnection:** To ensure victims connect to the Evil Twin rather than the legitimate network, the attacker typically launches a deauthentication attack against the legitimate access point. This forcibly disconnects clients. When clients try to reconnect, they see the familiar network name and connect to whichever access point has the strongest signal — often the attacker's Evil Twin.
+
+**Step four — Credential capture:** When a victim connects to the Evil Twin, they may be presented with a captive portal — a web page that asks for the Wi-Fi password "to complete connection." Many users enter their password without suspicion, directly giving it to the attacker. Even without a captive portal, all unencrypted traffic (HTTP) from the connected victim passes through the attacker's device and can be read and logged.
+
+**Step five — Proxying:** The attacker's device forwards the victim's traffic to the real internet (through a cellular connection or another wireless connection), so the victim's browsing appears to work normally. The victim has no indication they are being intercepted.
+
+### WPA-Enterprise Evil Twin — A Special Threat
+
+When targeting networks using WPA-Enterprise (802.1X authentication with RADIUS), the Evil Twin attack is particularly powerful. These networks use credentials (username and password) rather than a pre-shared key. When a victim's device connects to the Evil Twin and their operating system automatically attempts authentication using their saved credentials, the Evil Twin's hostapd-wpe captures the NTLM hash of their Active Directory credentials. These hashes can be cracked offline to reveal the plaintext password, granting domain access.
+
+This is especially dangerous because employees' devices are configured to automatically connect to the corporate wireless network. When the Evil Twin broadcasts the same SSID, the device connects automatically — without any user interaction — and attempts authentication, leaking credential hashes without the user ever knowing.
+
+### Tools
+
+hostapd-wpe is a modified version of hostapd designed for Evil Twin attacks with built-in support for capturing WPA-Enterprise credentials. Airbase-ng from the Aircrack-ng suite creates a software access point from any wireless card capable of injection mode. Wifiphisher is a specialized tool that automates the entire Evil Twin attack process, including deauthentication, fake AP creation, and a library of realistic-looking captive portal pages.
+
+---
+
+## 5.2.4 Disassociation (Deauthentication) Attacks
+
+### Understanding 802.11 Management Frames
+
+To understand why deauthentication attacks work, you need to understand how Wi-Fi connections are managed at the protocol level. The 802.11 standard defines three types of frames: data frames (carrying actual data), control frames (managing channel access), and management frames (handling connection establishment and maintenance).
+
+Management frames include beacons (access points periodically announcing their existence), authentication frames (establishing a connection), and deauthentication/disassociation frames (terminating a connection).
+
+The critical security flaw in 802.11 before the 802.11w amendment: management frames were not authenticated. Any device could send a management frame claiming to be from any source. In particular, any device could send a deauthentication frame claiming to be from a legitimate access point, telling a client to disconnect — and the client would obey without verifying the frame's authenticity.
+
+### The Attack Mechanism
+
+A deauthentication attack exploits this lack of frame authentication. The attacker sends forged deauthentication frames to clients, spoofing the source MAC address to appear as if the frames come from the legitimate access point. The clients receive these frames and interpret them as legitimate instructions from the AP to disconnect. They obediently terminate their connections.
+
+The attacker can target a specific client (by using their MAC address as the destination) or broadcast deauthentication frames targeting all clients simultaneously (using the broadcast MAC address FF:FF:FF:FF:FF:FF as the destination).
+
+The attack is trivially easy to execute with freely available tools and requires only a wireless adapter capable of packet injection. It requires no authentication credentials and no prior access to the network.
+
+### Why Attackers Use Deauthentication
+
+Deauthentication attacks serve as enablers for other attacks rather than being damaging in themselves. The primary uses are:
+
+**Forcing WPA2 handshake capture:** When clients reconnect after being deauthenticated, they perform the four-way handshake, which the attacker captures for offline cracking.
+
+**Creating pressure that drives victims to Evil Twin:** As described in 5.2.3, continuous deauthentication from the real AP drives clients to connect to the stronger-signal Evil Twin.
+
+**Denial of service:** Continuously deauthenticating clients makes the wireless network unusable — useful as a distraction or competitive sabotage.
+
+### Tools and Technique
+
+Aireplay-ng from the Aircrack-ng suite performs deauthentication attacks: `aireplay-ng --deauth 0 -a [AP_BSSID] -c [client_MAC] wlan0mon`. The `--deauth 0` sends a continuous stream of deauth frames, `-a` specifies the access point's BSSID to spoof, and `-c` specifies the target client. MDK3 and MDK4 are alternative tools for more sophisticated denial-of-service scenarios.
+
+### 802.11w — The Defense
+
+IEEE 802.11w (Management Frame Protection) addresses the lack of management frame authentication by cryptographically protecting management frames including deauthentication and disassociation frames. When MFP is enabled, a client that receives a deauthentication frame can verify its authenticity. Forged deauth frames from an attacker who does not possess the network keys will fail verification and be ignored.
+
+WPA3 mandates management frame protection, making deauthentication attacks ineffective against WPA3 networks.
+
+---
+
+## 5.2.5 Preferred Network List Attacks
+
+### What Is the Preferred Network List?
+
+Every wireless device maintains a list of networks it has connected to in the past. On Windows it is called Preferred Networks, on Android Saved Networks, on iOS the list of known Wi-Fi networks. The common technical term is PNL (Preferred Network List).
+
+The purpose is convenience: when you connect to your home Wi-Fi once and walk away, then return, your device automatically reconnects. The device periodically sends probe request frames — broadcast messages asking "Is anyone out there advertising the network named X?" — for each network on its PNL. When a matching network responds, the device connects.
+
+### How Attackers Exploit the PNL
+
+The attack is elegant in its simplicity. An attacker runs software that passively listens for probe request frames from nearby devices. These probe requests reveal the names of every network that device has ever connected to — home networks, coffee shop networks, hotel networks, corporate networks. This is a significant privacy leak that reveals the history of where a device has been.
+
+More dangerously, the attacker can respond to these probe requests by broadcasting a network with the same SSID the device is probing for. The device, believing it has found its saved network, automatically connects — without any user interaction. The attacker now has a MITM position on that device's wireless traffic.
+
+Consider a practical example. An employee commutes by train and has previously connected to free Wi-Fi at a coffee shop called "Starbucks WiFi." Their laptop sends probe requests for "Starbucks WiFi" every few minutes while on the train. The attacker, sitting nearby, sees this probe and immediately broadcasts a network named "Starbucks WiFi." The victim's laptop automatically connects. The attacker now intercepts all of that laptop's unencrypted traffic.
+
+The particularly insidious aspect is that PNL attacks require no action from the victim and exploit trusted network connections — the victim's device is doing exactly what it was designed to do.
+
+### Defense
+
+The most effective defense is keeping the PNL short. Remove saved networks you no longer use regularly. On public networks, configure the device to "forget" the network after leaving rather than saving it permanently. Disabling automatic reconnection to open networks removes the most dangerous category of PNL attack targets, since the attacker can impersonate these networks without needing to know any credentials.
+
+---
+
+## 5.2.6 Wireless Signal Jamming and Interference
+
+### How Wi-Fi Signals Can Be Disrupted
+
+Wi-Fi operates on shared radio frequency spectrum. If the 2.4 GHz or 5 GHz frequencies are flooded with noise or competing signals of sufficient strength, wireless communication becomes impossible. This is the principle behind jamming attacks — overwhelming the target frequency band with radio frequency noise.
+
+Radio frequency jamming at sufficient power levels is illegal in most jurisdictions — classified as interference with communications and subject to significant criminal penalties. However, understanding jamming is important for security professionals because it represents a denial-of-service threat to wireless infrastructure.
+
+### Intentional Jamming
+
+A dedicated RF jammer broadcasts noise on the target frequency band at sufficient power to overwhelm legitimate Wi-Fi signals. Devices within range cannot communicate because the background noise drowns out the actual data signals. Unlike the deauthentication attack (which targets specific protocol behaviors), jamming is a physical layer attack — it works regardless of the security protocol in use, against WPA3 just as effectively as against WEP.
+
+### Protocol-Level Denial of Service
+
+Beyond physical jamming, several protocol-level attacks create effective denial of service on wireless networks without requiring an RF jammer. Beacon flooding sends thousands of fake beacon frames advertising non-existent networks, overwhelming clients' ability to find the real network. Authentication flooding sends massive numbers of authentication requests to an access point, exhausting its state table. EAPOL flooding overwhelms the 802.1X authentication process with fake EAPOL frames. These attacks can be launched with standard wireless hardware and tools like MDK3/MDK4.
+
+### Unintentional Interference and Detection
+
+Not all wireless interference is malicious. The 2.4 GHz band is shared with microwave ovens, baby monitors, Bluetooth devices, cordless phones, and neighboring Wi-Fi networks. Security professionals investigating wireless issues must distinguish between malicious jamming and ordinary interference.
+
+Tools for analyzing wireless interference include spectrum analyzers and software tools like Wi-Spy combined with Chanalyzer that provide spectrum analysis from a USB device. Identifying unexpected high-power signals on Wi-Fi frequencies is the first step in determining whether jamming is occurring.
+
+---
+
+## 5.2.7 War Driving
+
+### The Concept and History
+
+War driving is the practice of driving (or walking, flying, or moving by any means) through an area while scanning for wireless networks. The term dates from the early 2000s and combines "war dialing" (an older technique of calling phone numbers sequentially to find modems) with the act of driving.
+
+War driving serves legitimate purposes in security assessments: mapping an organization's wireless footprint to identify unauthorized access points or networks that extend beyond the intended coverage area. The first large-scale war driving surveys in the early 2000s revealed that the majority of Wi-Fi networks were either completely unsecured or using WEP — data that was pivotal in pushing organizations toward better security practices.
+
+### Modern War Driving
+
+Modern war driving typically involves a laptop or Raspberry Pi with a wireless adapter and GPS receiver, running software like Kismet or Wigle. Kismet passively captures 802.11 frames and logs discovered networks with their SSID, BSSID, security configuration, signal strength, and GPS coordinates.
+
+Wigle.net is a crowdsourced database of wireless networks collected through war driving worldwide. Users upload scan results, and the database can be queried to find historical records of networks at specific locations — useful for OSINT (locating where a specific network has been seen, identifying all networks at a target location).
+
+War flying extends war driving to drones and aircraft, achieving wider coverage. Security researchers have demonstrated war flying over large areas to survey wireless network density. More concerningly, attackers have used drones with wireless hardware to access networks in areas that are physically inaccessible — rooftops or upper floors of buildings where ground-level attacks would not reach.
+
+### What War Driving Reveals
+
+For a penetration tester assessing an organization, war driving around the building reveals: which wireless networks the organization broadcasts and from where (signal leakage mapping), any unauthorized rogue access points, the security configuration of each network (open, WEP, WPA2, WPA3), access point models and firmware versions (which may have known vulnerabilities), and neighboring networks that might create interference or confusion.
+
+### Tools
+
+Kismet: `kismet --interface wlan0` starts passive scanning, logging all discovered networks to a SQLite database. Airodump-ng: `airodump-ng wlan0mon` shows all visible networks with SSID, BSSID, encryption type, channel, and signal strength. Both tools can be combined with a GPS device for geographic logging.
+
+---
+
+## 5.2.8 Initialization Vector (IV) Attacks and Unsecured Wireless Protocols
+
+### WEP — Why It Failed
+
+WEP (Wired Equivalent Privacy) was the original security protocol for 802.11 wireless networks, introduced in 1997. Its name reflected the goal: making wireless networks as secure as wired networks. By the early 2000s, WEP was completely broken — not improved or degraded, but fundamentally and irrecoverably broken. Understanding why WEP failed is essential for understanding IV attacks and for appreciating why proper cryptographic design matters.
+
+WEP used RC4 as its encryption algorithm — a stream cipher that generates a pseudorandom keystream that is XORed with the plaintext to produce ciphertext. RC4 itself is not inherently broken. The problem was how WEP used it.
+
+### The Initialization Vector Problem — Explained Simply
+
+A stream cipher like RC4 must never use the same key to encrypt two different plaintexts. Imagine you have a secret codebook that substitutes each letter with a symbol. If you always use the same codebook for every message, an eavesdropper who collects enough messages can eventually figure out the code — because the same letter will always become the same symbol, revealing patterns.
+
+WEP addressed this by adding a 24-bit Initialization Vector (IV) — a random number prepended to the WEP key for each packet. This means each packet theoretically uses a slightly different key. With a 24-bit IV, there are 16,777,216 possible values.
+
+This sounds sufficient until you consider packet volumes. A moderately loaded network transmits hundreds of packets per second. With 16.7 million possible IVs and random selection, by the birthday paradox, IVs begin repeating after approximately 5,000 packets on average — on a busy network, this happens within minutes. When two packets are encrypted with the same IV (and therefore the same keystream), an attacker who captures both can XOR them together to eliminate the keystream, revealing information about both plaintexts.
+
+### The FMS Attack — Statistical Cryptanalysis
+
+In 2001, researchers Fluhrer, Mantin, and Shamir published a paper (the FMS attack) describing a weakness in RC4's key scheduling algorithm. Certain IVs — called "weak IVs" — leak information about the key bytes when used. By collecting enough packets encrypted with weak IVs and performing statistical analysis on the first bytes of each keystream, the WEP key can be recovered.
+
+This moved WEP cracking from theoretical to practical: collecting enough traffic (originally millions of packets, reduced to tens of thousands with improved techniques) and running cryptanalysis would recover the WEP key regardless of its length. The PTW attack (2007) further reduced the requirement to approximately 40,000 packets for a 40-bit WEP key — collectable in minutes on a busy network.
+
+Tools like Aircrack-ng automate this entire process: capture packets with Airodump-ng, inject ARP request packets with Aireplay-ng (which forces the AP to respond with known-plaintext packets, dramatically accelerating IV collection), and run Aircrack-ng against the capture file to recover the key.
+
+### WPA and WPA2 — Improvements and Remaining Weaknesses
+
+WPA (2003) was introduced as an emergency fix for WEP while WPA2 was being finalized. WPA used TKIP (Temporal Key Integrity Protocol) which addressed WEP's IV reuse problem with a 48-bit sequence counter and added MIC (Message Integrity Check) to detect tampering.
+
+WPA2 (2004) replaced TKIP with CCMP using AES encryption — a significant security improvement. WPA2 became mandatory for Wi-Fi certification in 2006.
+
+WPA2's primary remaining weakness in Personal mode (WPA2-PSK) is the four-way handshake. When a client authenticates to a WPA2-PSK network, they perform a four-way handshake with the access point that establishes session keys. This handshake does not transmit the PSK but uses it in key derivation. An attacker who captures this handshake can perform offline dictionary attacks: for each candidate password, derive the PMK (Pairwise Master Key), then verify against the captured handshake.
+
+**Capturing the handshake:** Use Airodump-ng to capture traffic on the target network's channel, then use Aireplay-ng to send deauthentication frames forcing clients to reconnect. When a client reconnects, the four-way handshake is captured. Crack with Aircrack-ng: `aircrack-ng -w wordlist.txt capture.cap`. Hashcat is significantly faster for GPU-accelerated cracking: `hashcat -m 22000 capture.hc22000 wordlist.txt`.
+
+### WPA3 and Its Improvements
+
+WPA3 (2018) addressed the four-way handshake vulnerability by replacing PSK authentication with SAE (Simultaneous Authentication of Equals, also called Dragonfly). SAE is a zero-knowledge proof protocol that does not transmit anything from which the password can be derived offline — even if an attacker captures the entire authentication exchange, they cannot perform offline dictionary attacks. Each authentication attempt requires active interaction with the network.
+
+WPA3 also provides forward secrecy: even if an attacker records all encrypted traffic and later compromises the network password, they cannot decrypt past sessions, because each session's keys are derived independently and not stored.
+
+WPA3 vulnerabilities exist but are significantly more difficult to exploit: side-channel attacks against SAE implementations, downgrade attacks forcing WPA2 in mixed-mode networks, and denial-of-service conditions.
+
+### PMKID Attack
+
+The PMKID attack (discovered 2018) allows capturing a value from the access point that can be used for offline WPA2 password cracking without capturing a four-way handshake. The PMKID is included in some EAPOL frames and is derived from the PMK (which is derived from the password). This means an attacker can request this value from the access point directly — without needing any clients to be connected or disconnected.
+
+hcxdumptool captures PMKIDs: `hcxdumptool -i wlan0mon -o output.pcapng --enable_status=1`. Convert and crack: `hcxpcapngtool output.pcapng -o hash.hc22000` then `hashcat -m 22000 hash.hc22000 wordlist.txt`.
+
+### WPS Attacks
+
+WPS (Wi-Fi Protected Setup) was designed to make it easier to add devices to a WPA2 network without typing a long password. One WPS method uses an 8-digit PIN. Researchers in 2011 discovered that the WPS PIN verification is split into two 4-digit halves that are verified separately — reducing the effective search space from 10^8 to 10^4 + 10^4 (20,000 guesses). This makes brute-forcing the WPS PIN trivial.
+
+Reaver is the primary tool for WPS PIN attacks: `reaver -i wlan0mon -b [BSSID] -vv`. On routers without rate limiting or lockout, this takes 4-10 hours. WPS should be disabled on all access points as a security baseline.
+
+---
+
+## 5.2.9 KARMA Attacks
+
+### The KARMA Concept
+
+KARMA (Karma Attacks Radio Machines Automatically) exploits the probe request behavior of wireless devices to create an automated "I am whatever you're looking for" rogue access point.
+
+Recall from 5.2.5 that wireless devices broadcast probe requests asking "Is anyone out there with the network name X?" for each network in their Preferred Network List. Traditional Evil Twin attacks require the attacker to know the SSID they want to impersonate before setting up the rogue AP. KARMA eliminates this requirement entirely.
+
+A KARMA-enabled access point responds to any probe request it receives, regardless of the requested SSID. When a client's device sends a probe request for "HomeNetwork_5G", the KARMA AP responds "Yes, I am HomeNetwork_5G." When the next client probes for "Airport_Free_WiFi", the KARMA AP responds "Yes, I am Airport_Free_WiFi." For open networks (no password required), the client will automatically connect without any user interaction.
+
+### Why KARMA Is So Effective
+
+KARMA attacks are particularly effective in crowded public spaces: airports, coffee shops, train stations, conference centers. In these environments, dozens or hundreds of devices are constantly sending probe requests for their home networks, previous hotel Wi-Fi, coffee shop networks — every open network they have ever connected to. A single KARMA access point can simultaneously impersonate hundreds of different networks, automatically establishing a MITM position for any device that auto-connects.
+
+The attack is passive in its trigger — it simply responds to what clients ask for rather than requiring the attacker to know anything in advance. Combined with automatic connection behavior for open networks, KARMA attacks can capture device traffic without any user interaction whatsoever.
+
+### KARMA in Modern Environments
+
+Modern operating systems have partially mitigated KARMA attacks. iOS devices send randomized MAC addresses and in some cases send undirected probe requests (not specifying the SSID). Android similarly has improved probe request privacy. However, many devices still send directed probes for some saved networks, and randomization is not universal. Additionally, KARMA remains highly effective against open networks — even with directed probe improvement, if a device probes for an open network, it will automatically connect to a KARMA AP without any prompt.
+
+### Tools
+
+Hostapd-wpe with KARMA support automatically responds to all probe requests. The Hak5 Wi-Fi Pineapple — a commercial device specifically designed for wireless security testing — includes KARMA functionality as a core feature, making it a popular tool for authorized wireless penetration testing.
+
+---
+
+## 5.2.10 Fragmentation Attacks
+
+### What Is a Fragmentation Attack?
+
+Wireless fragmentation attacks target the WEP encryption protocol specifically, exploiting its fragmentation mechanism to obtain keystream material that can be used to inject arbitrary packets into a WEP-protected network.
+
+### The Mechanism — Step by Step
+
+WEP allows packets to be fragmented — split into smaller pieces for transmission. Each fragment is encrypted independently using RC4 with the combination of the WEP key and a per-fragment IV.
+
+When the attack captures even a small encrypted fragment, if the attacker knows the plaintext of that fragment (ARP packets have a known, predictable structure), they can recover the keystream used to encrypt it: plaintext XOR ciphertext = keystream.
+
+With a small piece of keystream, the attacker can generate a new encrypted packet. By sending this packet and observing whether the access point accepts it (indicates valid encryption) or rejects it, the attacker can iteratively extend their knowledge of the keystream until they have 1500 bytes of keystream — enough to encrypt a full-size Ethernet packet.
+
+This 1500-byte PRGA (Pseudo-Random Generation Algorithm output) becomes a powerful tool: the attacker can now inject arbitrary packets into the WEP-protected network without knowing the actual WEP key. They can generate and inject ARP requests, DNS queries, or other packets that elicit responses, and those responses provide more keystream, enabling further traffic injection and eventually WEP key recovery.
+
+### Significance
+
+The fragmentation attack demonstrates that WEP's problems extend beyond simple IV collection attacks. Even in scenarios where IV collection might be slow, the fragmentation attack can bootstrap an attacker's capabilities using very limited captured traffic. Aireplay-ng implements the fragmentation attack: `aireplay-ng --fragment -b [BSSID] -h [your_MAC] wlan0mon`.
+
+---
+
+## 5.2.11 Practice — IV, Unsecured Wireless, KARMA, and Fragmentation Attacks
+
+### Setting Up a Wireless Lab
+
+Practicing wireless attacks requires specific hardware. The most important requirement is a wireless adapter that supports monitor mode and packet injection. Monitor mode allows the adapter to capture all 802.11 frames on the air, not just those addressed to it. Packet injection allows sending arbitrary 802.11 frames.
+
+Not all wireless adapters support these modes — most built-in laptop Wi-Fi adapters do not. Popular choices for penetration testing include the Alfa AWUS036ACH (dual-band, excellent range), Alfa AWUS036NHA (2.4 GHz, long-range), and TP-Link TL-WN722N v1 (the v1 specifically — later versions changed chipsets and removed injection support).
+
+### Enabling Monitor Mode
+
+Enable monitor mode on the adapter: `airmon-ng check kill` (kills interfering processes like NetworkManager), then `airmon-ng start wlan0` (creates a monitor mode interface, typically named wlan0mon). Verify with `iwconfig wlan0mon` — the mode should show "Monitor."
+
+### Complete WPA2 Handshake Capture and Crack Workflow
+
+Start capturing on the target network's channel: `airodump-ng --bssid [TARGET_BSSID] --channel [CH] -w capture wlan0mon`. In a second terminal, force a reconnection to capture the handshake: `aireplay-ng --deauth 5 -a [TARGET_BSSID] wlan0mon`. Watch the airodump-ng terminal for "WPA handshake: [BSSID]" in the top right — this confirms capture. Stop airodump-ng and crack: `aircrack-ng -w /usr/share/wordlists/rockyou.txt capture-01.cap`.
+
+For GPU cracking with Hashcat, convert the capture first: `hcxpcapngtool capture-01.cap -o hash.hc22000` then `hashcat -m 22000 hash.hc22000 /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule`.
+
+### WEP Cracking Workflow
+
+For a WEP network (set up in lab only): start airodump-ng targeting the network and collecting IVs: `airodump-ng --bssid [BSSID] --channel [CH] -w wep_capture wlan0mon`. Speed up IV collection with ARP replay: associate with the network first (`aireplay-ng --fakeauth 0 -a [BSSID] -h [your_MAC] wlan0mon`) then inject ARP packets (`aireplay-ng --arpreplay -b [BSSID] -h [your_MAC] wlan0mon`). Once 50,000+ IVs are collected, crack: `aircrack-ng wep_capture-01.cap`.
+
+---
+
+## 5.2.12 Credential Harvesting
+
+### What Is Credential Harvesting in Wireless Context?
+
+In the wireless attack context, credential harvesting refers to techniques specifically used to capture authentication credentials — usernames, passwords, Wi-Fi keys — from victims connecting to or attempting to connect to wireless networks. Wireless-specific techniques are particularly interesting because they can capture credentials without the victim ever realizing they have been compromised.
+
+### Captive Portal Credential Harvesting
+
+A captive portal is the web page that appears when you connect to a public Wi-Fi network — hotel Wi-Fi that requires your room number, coffee shop Wi-Fi that requires email registration. Attackers create fake captive portals as part of Evil Twin and rogue AP attacks.
+
+When a victim connects to the attacker's access point, a realistic-looking captive portal appears — mimicking the interface of Starbucks, AT&T, or whatever network the victim expects to see. The victim enters their credentials. The attacker captures these credentials directly. Wifiphisher has a library of pre-built captive portal templates specifically for this purpose, including realistic imitations of common networks and router firmware interfaces that ask victims to "re-enter their Wi-Fi password due to a firmware update."
+
+### WPA-Enterprise Credential Harvesting
+
+For enterprise networks using WPA-Enterprise (802.1X), when a client device connects to an Evil Twin access point and attempts automatic authentication using saved credentials, the authentication occurs over EAP (Extensible Authentication Protocol). Depending on the EAP method in use, the attacker captures NTLM hashes (from MSCHAPv2-based methods like PEAP and EAP-TTLS), which can be cracked offline to recover Active Directory passwords.
+
+Hostapd-wpe is specifically designed for this: it supports WPA-Enterprise authentication, accepts connections from clients, captures EAP authentication attempts, and logs the credential hashes. After capturing, crack NTLM hashes with Hashcat: `hashcat -m 5500 captured_hashes.txt wordlist.txt`.
+
+### SSL Stripping in Wireless MITM
+
+With an on-path position established through an Evil Twin or KARMA attack, an attacker can apply SSL stripping to downgrade HTTPS connections to HTTP, allowing interception of credentials even from sites using TLS. Bettercap's SSL stripping functionality automates this process. Tools like sslstrip2 specifically handle HSTS preloading bypass techniques.
+
+### DNS Credential Harvesting
+
+With a MITM position and DNS control (via rogue DHCP or DNS spoofing), the attacker can redirect the victim's DNS queries for target sites (banking portals, email login pages, corporate VPN portals) to attacker-controlled servers running realistic phishing pages. The victim believes they are logging into their bank — instead, they are submitting credentials to the attacker.
+
+---
+
+## 5.2.13 Bluejacking and Bluesnarfing
+
+### Bluetooth Fundamentals
+
+Bluetooth is a short-range wireless technology (typically 10-100 meters range depending on device class) operating in the 2.4 GHz ISM band. It uses frequency hopping spread spectrum (FHSS), switching between 79 frequencies 1,600 times per second, making it resistant to narrowband interference and eavesdropping compared to static-frequency protocols.
+
+Bluetooth devices operate in one of three discovery modes: discoverable (visible to other Bluetooth devices scanning for them), limited discoverable (visible for a short time period), and non-discoverable (not broadcasting their presence). Only discoverable devices are visible to scanning, but non-discoverable devices can still be connected to if their address is already known.
+
+### Bluejacking
+
+Bluejacking is the practice of sending unsolicited messages to Bluetooth-enabled devices. The name is a portmanteau of "Bluetooth" and "hijacking" but is somewhat misleading — it does not hijack anything. The attacker simply sends a message that appears on the victim's device.
+
+The original bluejacking exploited the Bluetooth OBEX (Object Exchange) protocol's ability to push contact cards (vCards) to other devices without requiring prior pairing. The contact card's "name" field could contain any text, which would appear as a notification on the victim's screen. Attackers used this to send unexpected messages — sometimes harmless pranks, sometimes social engineering messages like "Your phone has a security problem, call 555-1234 for support."
+
+Modern Bluetooth implementations require user confirmation before accepting unsolicited OBEX pushes, which has largely eliminated this attack vector on current devices. However, it remains relevant for identifying older devices and for understanding social engineering through Bluetooth.
+
+### Bluesnarfing
+
+Bluesnarfing is significantly more serious than bluejacking — it involves unauthorized access to information stored on a Bluetooth-enabled device. The attack exploits implementation weaknesses in the OBEX protocol to retrieve data (contacts, calendar entries, emails, messages) without the device owner's knowledge or consent.
+
+Early Bluetooth implementations (pre-2003) allowed OBEX GET requests without requiring authentication, meaning an attacker within Bluetooth range could request and receive the phone's entire contact list, calendar, and messages without the user seeing any notification. The device needed to be in discoverable mode, but that was often the default.
+
+**How exploitation works:** The attacker uses a tool like btftp or bluesnarf to send OBEX GET requests for specific file paths on the target device's Bluetooth file system. Paths like telecom/pb.vcf (phone book in VCard format), telecom/cal.vcs (calendar), and telecom/msg/ (messages folder) are standard paths that early devices exposed without authentication. The attacker receives the files directly without the user seeing any notification.
+
+The vulnerability was significant enough that affected manufacturers released firmware updates. Modern Bluetooth devices require pairing (and user authentication) before any data access, but older devices remain vulnerable. In penetration testing scenarios targeting environments with older hardware (medical devices, industrial equipment), bluesnarfing vulnerabilities may still be present.
+
+### Bluebugging
+
+Bluebugging is a more advanced attack that gained access to a phone's AT commands via Bluetooth, allowing the attacker to place calls, send SMS messages, read messages, and access phone functions — all silently, without the device owner's knowledge.
+
+### Defense
+
+Keep Bluetooth disabled when not in use. When pairing, do so in private locations. Keep device firmware updated. Enable "non-discoverable" mode by default. Modern Bluetooth (2.1+) with Secure Simple Pairing is resistant to historical Bluesnarfing attacks.
+
+---
+
+## 5.2.14 Bluetooth Low Energy (BLE) Attacks
+
+### BLE vs. Classic Bluetooth
+
+Bluetooth Low Energy was introduced with Bluetooth 4.0 (2010) and is a fundamentally different protocol from Classic Bluetooth. BLE was designed for IoT devices that require minimal power consumption — fitness trackers, smartwatches, medical devices (heart rate monitors, glucose meters, insulin pumps), smart home sensors, beacons, and a vast array of consumer electronics.
+
+BLE devices typically operate in two modes: advertising (broadcasting their presence and possibly data on advertising channels) or connected (exchanging data with a paired device on data channels). The advertising mode is critical for security: BLE devices in advertising mode are broadcasting data continuously, and this broadcast can be received by anyone with a BLE scanner.
+
+### BLE Security Models and Their Weaknesses
+
+**No Security / No Encryption:** The device transmits and receives data with no encryption and no authentication. An attacker within range can read all communications. Remarkably, many IoT devices operate in this mode — fitness bands, simple sensors, location beacons.
+
+**Unauthenticated Pairing (Just Works):** The device accepts pairing without any verification of the connecting party's identity. There is no PIN or confirmation. An attacker can pair with the device, and if the application relies on pairing as access control, they gain full access.
+
+**Authenticated Pairing:** Requires out-of-band verification (entering a PIN displayed on the device, comparing numeric codes). This provides protection against on-path attacks during pairing.
+
+### BLE Sniffing
+
+BLE advertising is public by design — that is its purpose, to advertise the device's presence. BLE sniffers can passively capture all advertising packets from all BLE devices in range. Tools like Ubertooth One (specialized hardware for Bluetooth sniffing) and standard Bluetooth adapters with Wireshark's Bluetooth support can capture BLE advertising data.
+
+The data in BLE advertising packets can be sensitive: fitness devices broadcasting health metrics, retail beacons broadcasting location data, Bluetooth proximity devices revealing user location patterns.
+
+### BLE MITM Attacks
+
+For BLE connections that use encryption, an on-path attack during the pairing process can capture the keys needed to decrypt subsequent communications. In Just Works pairing mode, there is no protection against a MITM attack — the attacker can intercept the pairing process and insert themselves between the device and its controller.
+
+GATTacker is a tool for BLE MITM attacks that creates a relay between a BLE peripheral and a central device, allowing inspection and modification of GATT (Generic Attribute Profile) communications. A practical attack using GATTacker against a smart lock, fitness tracker, or medical device can demonstrate the complete insecurity of many BLE IoT implementations.
+
+### BLE Replay Attacks
+
+Many BLE devices implement simple lock/unlock mechanisms using BLE commands. If these commands are sent in plaintext or with weak cryptography, an attacker who captures the command sequence can replay it later to achieve the same effect — unlocking a door, triggering a device, or changing a setting. Security researchers have demonstrated replay attacks against BLE-enabled door locks, car keyless entry systems, and medical device controllers.
+
+---
+
+## 5.2.15 Radio-Frequency Identification (RFID) Attacks
+
+### What Is RFID?
+
+RFID (Radio-Frequency Identification) uses electromagnetic fields to automatically identify and track tags attached to objects or embedded in access cards. RFID systems have two components: a reader (which generates an electromagnetic field) and a tag (which is powered by and responds to this field).
+
+Tags can be passive (no battery — powered entirely by the reader's electromagnetic field, range of a few centimeters to meters) or active (battery-powered, can initiate communication, longer range). RFID operates at various frequencies: LF (125 kHz), HF (13.56 MHz, including NFC), and UHF (860-960 MHz).
+
+RFID is pervasive in physical security: employee access badges, building entry systems, hotel key cards, public transit cards, library book tracking, supply chain management, and contactless payment cards.
+
+### RFID Skimming — How It Works
+
+RFID skimming reads tag data from a distance without the tag owner's knowledge or consent. For LF and HF tags (including many access control cards), a concealed reader can capture the tag's data when the victim is within range. This requires only commercially available RFID reader hardware, often available for under $50.
+
+The captured data (typically a unique identifier number) can be cloned to a blank, writable tag — a "blank" access card — allowing the attacker to present as the victim to RFID-based access control systems. This attack is particularly effective against older access control systems using simple UID-based authentication without cryptographic challenge-response.
+
+For LF tags, range is typically 10-20 cm. For HF tags (13.56 MHz), range can be up to a meter with high-power readers. This range is sufficient to skim a badge from someone standing next to you in an elevator or queue — a technique called "shoulder surfing without looking."
+
+### RFID Cloning
+
+After capturing an RFID tag's data, cloning copies that data to a new, writable tag. For basic access control systems that only verify the tag's UID, this completely bypasses authentication — the cloned tag is indistinguishable from the original to the reader.
+
+The Proxmark3 is the premier tool for RFID/NFC security research: it can read, analyze, clone, emulate, and brute-force a wide variety of RFID tags and protocols. The Flipper Zero, a popular multi-function security research tool, includes RFID reading and emulation capabilities for common frequencies.
+
+### NFC Attacks
+
+NFC (Near Field Communication) is a subset of HF RFID operating at 13.56 MHz with very short range (typically under 4 cm). It is used in contactless payment cards, modern hotel key cards, and smartphone NFC for payments (Apple Pay, Google Pay).
+
+NFC relay attacks use two devices to extend the range of an NFC interaction: one device reads the legitimate NFC tag (or payment card) and relays the data in real-time over a network connection to a second device that presents it to the target reader. This enables using a payment card at a POS terminal while the actual card is across the city — effectively "virtual pickpocketing" that works in real time.
+
+### Defense Against RFID Attacks
+
+RFID-blocking wallets and passport holders prevent skimming by attenuating the electromagnetic field. Modern access control systems use cryptographic authentication (MIFARE DESFire, iCLASS SE) that requires proving knowledge of a secret key, not just presenting a UID — cloned UIDs will not work against these systems. Monitoring for multiple simultaneous reads of the same card ID can detect clone usage.
+
+---
+
+## 5.2.16 Password Spraying
+
+### What Is Password Spraying?
+
+Password spraying is a credential attack strategy that inverts the traditional brute-force approach. Traditional brute-force attacks try many passwords against a single account — quickly triggering lockout mechanisms that disable the account after N failed attempts. Password spraying tries a single common password (or very small set of passwords) against many different accounts simultaneously.
+
+The logic is statistical: if an organization has 1,000 employees and the most common password is "Summer2024!", statistically some percentage of employees will be using that password. By trying "Summer2024!" against all 1,000 accounts — one attempt per account, spread over time — the attacker stays well under lockout thresholds for any individual account while still compromising accounts whose users chose predictable passwords.
+
+Password spraying is particularly effective because the attacker avoids lockouts while still achieving a meaningful success rate. Even a 1% success rate against a 1,000-account organization means 10 compromised credentials — potentially including privileged accounts.
+
+### Common Password Patterns to Spray
+
+Effective password spraying targets passwords that are predictable and common enough that some percentage of users will use them, while meeting complexity requirements. Examples include seasonal patterns with years ("Summer2024!", "Winter2025!"), company name variations ("Companyname1!", "Company2024!"), and default patterns organizations often set for new accounts ("Welcome1!", "Password1!", "Changeme1!"). These patterns are common because users want memorable passwords that meet complexity requirements with minimal cognitive effort.
+
+### Password Spraying in Wireless Context
+
+In wireless environments, password spraying is used against captive portal authentication systems, WPA2-Enterprise networks (spraying credentials through the 802.1X authentication mechanism), web-based management interfaces for access points and wireless controllers, and cloud identity providers (Microsoft 365/Azure AD, Google Workspace) after obtaining initial wireless access.
+
+### Tools and Operational Considerations
+
+Spray is a dedicated password spraying tool: `spray.py -smb [DC_IP] -u userlist.txt -p "Summer2024!" -a`. For Azure AD/Microsoft 365, MSOLSpray performs password spraying against Microsoft's authentication endpoints while implementing delays to avoid triggering Azure AD Smart Lockout.
+
+The critical operational consideration: always respect lockout thresholds. Before spraying, determine the organization's lockout policy from LDAP enumeration. Spray no more than (lockout_threshold - 1) attempts per account per observation window. A failed spray that locks out accounts is immediately detectable, disruptive to business operations, and reveals the attack to defenders.
+
+---
+
+## 5.2.17 Exploit Chaining
+
+### The Concept of Exploit Chaining
+
+Exploit chaining (also called vulnerability chaining or attack chaining) refers to combining multiple individually lower-severity vulnerabilities to achieve a higher-severity impact than any single vulnerability would allow. Real-world breaches almost never involve a single, spectacular, critical vulnerability — they involve a carefully constructed chain of smaller findings, each enabling the next.
+
+Understanding exploit chaining is what separates a junior penetration tester (who reports isolated findings) from a senior practitioner (who demonstrates the complete attack narrative that transforms a low-severity information disclosure into a root compromise of the domain controller).
+
+### A Wireless Exploit Chain — Realistic Scenario
+
+Consider a realistic attack scenario demonstrating how wireless vulnerabilities chain together:
+
+**Link 1 — War Driving:** The attacker drives past the target organization and identifies wireless networks using Kismet. They discover the organization broadcasts both a corporate SSID (WPA2-Enterprise) and a guest network (WPA2-PSK). They also discover a third network matching a pattern associated with rogue APs.
+
+**Link 2 — WPA2-PSK Capture and Crack:** The attacker captures the four-way handshake for the guest network and cracks the PSK offline using Hashcat. Guest network access is gained — but this network is isolated from the corporate environment.
+
+**Link 3 — LLMNR Poisoning on Guest Network:** From the guest network, the attacker runs Responder. Some Windows machines on the guest network (conference room laptops brought in by guests) make LLMNR queries. NTLMv2 hashes are captured.
+
+**Link 4 — Hash Cracking:** One of the captured hashes cracks — revealing the credentials of a contractor who uses a simple password across corporate and personal accounts.
+
+**Link 5 — WPA-Enterprise Authentication:** The cracked password is tried against the corporate WPA2-Enterprise network. The contractor uses the same password for their corporate wireless access. Corporate network access is obtained.
+
+**Link 6 — Internal Reconnaissance:** From inside the corporate network, BloodHound is run to map Active Directory. A path from the contractor account to Domain Admin is identified through an unconstrained delegation machine.
+
+**Link 7 — Domain Compromise:** The unconstrained delegation vulnerability is exploited to capture Domain Admin Kerberos tickets, achieving complete domain compromise.
+
+Each individual finding — weak guest Wi-Fi PSK, LLMNR poisoning, password reuse, unconstrained delegation — might be rated as Medium severity in isolation. Chained together, they achieve complete organizational compromise starting from the parking lot with zero prior credentials.
+
+### The Narrative in Reporting
+
+When presenting exploit chains in penetration test reports, the business impact narrative is more important than any individual finding. The key is showing the complete path: "Starting from the parking lot with no credentials and no prior access, we achieved complete Domain Admin access within 4 hours through the following chain of vulnerabilities." This narrative communicates risk to non-technical stakeholders far more effectively than a list of individual findings.
+
+### Defensive Countermeasures for Chained Attacks
+
+Defending against exploit chains requires defense-in-depth — multiple security layers such that a failure in one layer does not lead directly to catastrophic compromise. Network segmentation prevents lateral movement between the guest and corporate networks. Disabling LLMNR prevents the credential capture. Password policies and password managers prevent reuse. MFA prevents credential-only authentication. Disabling unconstrained delegation prevents the privilege escalation. Each control breaks a link in the chain — removing one link makes the entire chain fail.
+
+---
+
+## 5.2.18 Practice — Wireless Attacks
+
+### Building a Complete Wireless Attack Lab
+
+A complete wireless attack lab for practicing Module 5.2 requires: Kali Linux VM with a supported wireless adapter (Alfa AWUS036ACH or similar) passed through to the VM, a wireless router configured with WPA2-PSK (and optionally WEP for legacy testing), and one or more client VMs or physical devices to simulate victim behavior.
+
+### Practice Workflow 1 — Complete WPA2 Attack
+
+Set up a WPA2 network on the router. Connect a client device and save the credentials. On Kali with wlan0 in monitor mode, start airodump-ng to identify the target. Capture the four-way handshake using aireplay-ng deauthentication. Convert the capture to hc22000 format using hcxpcapngtool. Attempt cracking with Hashcat using rockyou.txt and best64 rules. Document the time to crack as a function of password complexity — this viscerally demonstrates why password length matters more than complexity character requirements.
+
+### Practice Workflow 2 — Evil Twin with Wifiphisher
+
+Launch Wifiphisher targeting the previously studied network: `wifiphisher --essid [TARGET_SSID] -aI wlan0mon -jI wlan1 --handshake-capture [capture_file] -p firmware-upgrade`. Observe that Wifiphisher automatically deauthenticates clients, broadcasts the Evil Twin, and presents the captive portal. Observe captured credentials in the Wifiphisher terminal. Analyze the traffic flow to understand what the victim's device was doing during the attack.
+
+### Practice Workflow 3 — Bluetooth Reconnaissance
+
+On Kali with a Bluetooth adapter, scan for discoverable Bluetooth devices: `hcitool scan`. Perform more detailed discovery: `hcitool inq`. Use Bluelog for passive Bluetooth scanning over time: `bluelog -i hci0 -o bluetooth_log.txt -t`. Examine what device classes and names are revealed by nearby Bluetooth devices — consider the privacy implications of this information being publicly broadcast.
+
+### Practice Workflow 4 — Complete Documentation
+
+After each attack workflow, practice writing findings as they would appear in a penetration test report. For each finding, document: the vulnerability title, CVSS score and justification, technical description of what was found and how it was exploited, evidence (screenshots, captured data — sanitized appropriately), business impact statement (what an attacker could do with this access), and specific remediation steps with implementation guidance.
+
+The exercise of writing reports is as important as the technical execution — a finding that cannot be clearly communicated to a non-technical decision-maker will not be fixed.
+
+---
+
+## Summary
+
+Module 5.2 has covered the complete wireless attack landscape, from the fundamental physics of radio wave propagation that makes wireless inherently different from wired networks, through the evolution of Wi-Fi security protocols and their systematic failures, to modern attack techniques against Bluetooth, BLE, and RFID technologies.
+
+The conceptual thread running through every section is the same: wireless attacks succeed by exploiting the gap between what a technology was designed to do and the adversarial reality in which it operates. WEP was designed to provide security but its cryptographic implementation was fatally flawed. Probe requests were designed for convenience but broadcast private network history to anyone listening. BLE advertising was designed to make devices discoverable but simultaneously makes their communications observable. RFID was designed for frictionless identification but the "frictionless" part means no verification of who is doing the reading.
+
+Exploit chaining ties the entire module together by showing that individual wireless vulnerabilities rarely exist in isolation. The parking lot access, the WPS attack, the KARMA credential capture, the NTLM hash from WPA-Enterprise, the password spray — each is a link. A single strong link removed breaks the chain. Defense-in-depth means ensuring that breaking any single link is not sufficient to compromise the objective.
+
+The key professional takeaway: wireless security assessment requires constantly asking "what is broadcasting, what is it saying, and who is listening?" The air is a shared medium. Anything transmitted in it is transmitted to everyone within range. Security controls must account for this fundamental reality rather than assuming the radio frequency boundary respects the organization's property lines.
+
+---
+***— End of Module 5, Section 5.2 —***
