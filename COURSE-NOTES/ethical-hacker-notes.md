@@ -19979,3 +19979,1389 @@ A complete web application security assessment, after Module 6, follows this str
 *MODULE 6 — EXPLOITING APPLICATION-BASED VULNERABILITIES*
 *COMPLETE*
 *═══════════════════════════════════════════════════════════*
+
+# MODULE 7: Cloud, Mobile, and IoT Security
+
+## Table of Contents
+
+- [7.0 Introduction](#70-introduction)
+  - [7.0.1 Why Should I Take This Module?](#701-why-should-i-take-this-module)
+  - [7.0.2 What Will I Learn in This Module?](#702-what-will-i-learn-in-this-module)
+- [7.1 Researching Attack Vectors and Performing Attacks on Cloud Technologies](#71-researching-attack-vectors-and-performing-attacks-on-cloud-technologies)
+  - [7.1.1 Overview](#711-overview)
+  - [7.1.2 Practice - Types of Cloud Services](#712-practice---types-of-cloud-services)
+  - [7.1.3 Credential Harvesting](#713-credential-harvesting)
+  - [7.1.4 Practice - Credential Harvesting](#714-practice---credential-harvesting)
+  - [7.1.5 Privilege Escalation](#715-privilege-escalation)
+  - [7.1.6 Account Takeover](#716-account-takeover)
+  - [7.1.7 Metadata Service Attacks](#717-metadata-service-attacks)
+  - [7.1.8 Attacks Against Misconfigured Cloud Assets](#718-attacks-against-misconfigured-cloud-assets)
+  - [7.1.9 Resource Exhaustion and DoS Attacks](#719-resource-exhaustion-and-dos-attacks)
+  - [7.1.10 Cloud Malware Injection Attacks](#7110-cloud-malware-injection-attacks)
+  - [7.1.11 Side-Channel Attacks](#7111-side-channel-attacks)
+  - [7.1.12 Practice - Cloud Attack Types](#7112-practice---cloud-attack-types)
+  - [7.1.13 Tools and Software Development Kits (SDKs)](#7113-tools-and-software-development-kits-sdks)
+
+---
+
+# 7.0 Introduction
+
+## 7.0.1 Why Should I Take This Module?
+
+### The Shifting Perimeter Problem
+
+For decades, network security was conceptually simple: there was an inside and an outside. The inside was your trusted corporate network — employees, servers, file shares, databases, printers. The outside was the hostile internet. Between the two sat a firewall, an IDS, maybe a DMZ for your public-facing web servers. Security meant defending the perimeter — building higher walls between inside and outside.
+
+That model is dead.
+
+Three concurrent technological revolutions have dissolved the perimeter entirely, and understanding them is the prerequisite for understanding why Module 7 covers the most rapidly growing attack surface in the entire cybersecurity landscape.
+
+**Revolution One: Cloud Computing.** Organizations have migrated their data, applications, and infrastructure to cloud platforms — primarily AWS (Amazon Web Services), Microsoft Azure, and Google Cloud Platform (GCP). A company's most sensitive data no longer lives on servers in their basement. It lives on someone else's hardware, in data centers scattered across the globe, accessible over the public internet via APIs and web consoles. There is no perimeter. All users — employees, attackers, third-party vendors — approach the organization's cloud resources from the same direction: the internet. Security that relied on "inside = trusted" is completely inapplicable.
+
+**Revolution Two: IoT (Internet of Things).** The word "computer" used to mean a device with a screen, keyboard, and general-purpose processor. That is no longer true. Today, a computer is a refrigerator, a security camera, a building thermostat, a medical infusion pump, a manufacturing sensor, a smart meter, a pacemaker remote monitor, a vehicle telematics system. Each of these devices runs an embedded operating system, serves a network interface, and is often reachable over the public internet. Each one is a host on a network. Each one extends the attack surface into the physical world.
+
+The 2016 Mirai botnet attack made this viscerally clear: 600,000 IoT devices — primarily IP cameras and DVRs with default credentials — were recruited into a botnet that generated 1.2 terabits per second of DDoS traffic, taking down Dyn DNS and making Twitter, Netflix, Reddit, and dozens of other major services inaccessible for hours. The attack used zero zero-day vulnerabilities. It exploited only one thing: default credentials that the device owners had never changed.
+
+**Revolution Three: Mobile.** Smartphones and tablets are now the primary computing devices for most humans on earth. Corporate data is accessed through mobile apps, emails are read on personal devices under BYOD (Bring Your Own Device) policies, authentication apps run on phones. The attack surface has moved from locked data centers to devices that ride in pockets onto public transit, get left in taxis, and connect to airport Wi-Fi.
+
+### The Scenario Context: Pixel Paradise
+
+The course uses a fictional company called Pixel Paradise as the target for this module's assessment scenarios. Pixel Paradise provides cloud-based gaming services, meaning players' games, progress, licensing keys, and payment information are all stored in the cloud. They use an Infrastructure-as-a-Service (IaaS) model, where Pixel Paradise manages their applications and data on cloud provider infrastructure.
+
+This scenario illustrates the real-world cloud security challenge perfectly. Pixel Paradise does not own the physical servers — the cloud provider does. They do own the configuration of those servers, the IAM policies that control access to them, the security groups that govern network traffic, and the application code running on them. If any of these are misconfigured, no amount of physical security at the cloud provider's data center helps. The attacker never touches the hardware — they exploit the configuration.
+
+The risks highlighted include: theft of gaming assets and licensing keys (a real problem in gaming platforms where license keys have black market value), theft of payment information from the digital storefront (PCI DSS implications), and denial of service against a gaming platform (which has direct revenue impact proportional to downtime).
+
+## 7.0.2 What Will I Learn in This Module?
+
+| Topic | Topic Objective |
+|---|---|
+| Researching Attack Vectors and Performing Attacks on Cloud Technologies (7.1) | Explain how to attack cloud technologies — including credential harvesting, privilege escalation, account takeover, metadata service attacks, misconfigured asset exploitation, DoS, malware injection, and side-channel attacks. |
+| Explaining Common Attacks and Vulnerabilities Against Specialized Systems (7.2) | Explain common attacks against specialized systems including mobile devices, IoT devices, SCADA/ICS, and embedded systems. |
+
+**Why these two topics?** Because they represent the two growth vectors of modern attack surfaces. Cloud is where data and applications live. Specialized systems are where the physical world meets the digital world. A security professional who cannot assess cloud environments and IoT/OT systems is only equipped to defend an attack surface that is shrinking — the traditional on-premises enterprise network.
+
+---
+
+# 7.1 Researching Attack Vectors and Performing Attacks on Cloud Technologies
+
+## 7.1.1 Overview
+
+### What Makes Cloud Security Fundamentally Different
+
+Before diving into specific attack techniques, you need to understand the architectural principles of cloud computing that create a completely different security paradigm from on-premises environments. This is not just a technology change — it is a philosophical change in how security works.
+
+### The Cloud Service Models: IaaS, PaaS, SaaS
+
+Cloud services are delivered in three primary models, and understanding them is essential because they determine who is responsible for which security controls — and therefore where attack surfaces lie.
+
+**IaaS (Infrastructure as a Service):** The cloud provider gives you virtual machines, storage, networking, and raw compute capacity. You provide and manage everything above the hypervisor: the operating system, middleware, runtime, application, and data. Examples: AWS EC2, Azure Virtual Machines, GCP Compute Engine. You are responsible for patching the OS, securing the application, configuring network security groups, managing identity and access. The cloud provider is responsible for the physical hardware, power, cooling, and the hypervisor layer. Attack surface for attackers: everything you manage.
+
+**PaaS (Platform as a Service):** The cloud provider manages the OS, middleware, and runtime. You provide the application code and data. Examples: AWS Elastic Beanstalk, Azure App Service, Google App Engine, AWS Lambda (serverless is often considered PaaS). Your attack surface is reduced but not eliminated — your application code, configuration, and data are still your responsibility.
+
+**SaaS (Software as a Service):** The cloud provider manages everything, including the application. You use it as a consumer. Examples: Microsoft 365, Salesforce, Google Workspace, Dropbox. Your attack surface is primarily identity management — who has access to what within the SaaS application — and the data you store in it. The provider handles application security.
+
+**Why this matters for attackers:** The less infrastructure you manage (IaaS → PaaS → SaaS), the fewer infrastructure-level attack vectors exist — but the more dependent you become on identity security and configuration. SaaS breaches are overwhelmingly about compromised credentials and misconfigured sharing settings, not server exploitation.
+
+### The Shared Responsibility Model
+
+The shared responsibility model is the fundamental security concept of cloud computing: the division of security responsibilities between the cloud provider and the customer. Understanding it precisely is critical because misunderstanding it creates exactly the security gaps that attackers exploit.
+
+The cloud provider is responsible for: physical security of data centers, hardware maintenance and replacement, hypervisor security (in IaaS), network infrastructure between facilities, and — in PaaS and SaaS — the security of the managed services themselves.
+
+The customer is responsible for: the data they put in the cloud (always, in all models), identity and access management (who can access what), network security configuration (security groups, VPCs, firewalls), OS and application security (in IaaS), and application configuration (in all models).
+
+**The most common misunderstanding that leads to breaches:** Organizations believe that because they are "in the cloud" with a reputable provider like AWS or Azure, the provider is responsible for their security. This is false. AWS's responsibility is that their S3 service works correctly. Your responsibility is that you configured the permissions on your S3 buckets correctly. The misconfigured public S3 bucket — which has exposed billions of records in documented breaches — is always the customer's fault, not AWS's.
+
+### Cloud Deployment Models
+
+**Public Cloud:** Resources run on shared infrastructure owned by the provider and available to any paying customer. AWS, Azure, GCP are public clouds. The provider enforces isolation between customers (multi-tenant architecture).
+
+**Private Cloud:** Cloud infrastructure dedicated to a single organization, either hosted on-premises or by a provider. Provides more control but loses some of the scale and cost benefits of public cloud.
+
+**Hybrid Cloud:** A combination of public and private cloud, with data and applications able to move between them based on policy. Most large enterprises operate hybrid cloud — on-premises systems integrated with public cloud resources.
+
+**Community Cloud:** Shared infrastructure between organizations in the same industry or regulatory environment (e.g., government agencies sharing a FedRAMP-authorized cloud environment).
+
+### The Major Cloud Providers and Their Ecosystems
+
+**AWS (Amazon Web Services):** The market leader with the largest service catalog (200+ services). Key services from a security perspective: EC2 (virtual machines), S3 (object storage — most commonly misconfigured), IAM (Identity and Access Management — the crown jewels), Lambda (serverless), VPC (Virtual Private Cloud — network isolation), RDS (managed databases), CloudTrail (audit logging), GuardDuty (threat detection), Security Hub (security posture management).
+
+**Microsoft Azure:** The second largest provider, dominant in enterprises due to integration with Active Directory. Key services: Azure VMs, Azure Blob Storage (S3 equivalent), Azure Active Directory / Entra ID (cloud identity — integrates with on-premises AD), Azure Functions (serverless), Azure Virtual Networks, Azure SQL Database, Azure Sentinel (SIEM), Microsoft Defender for Cloud.
+
+**GCP (Google Cloud Platform):** Third largest, particularly strong in data analytics and Kubernetes. Key services: Compute Engine (VMs), Cloud Storage (S3 equivalent), Cloud IAM, Cloud Functions, BigQuery (data warehouse), GKE (Google Kubernetes Engine — the dominant managed Kubernetes service).
+
+### Why Attackers Love the Cloud
+
+From an attacker's perspective, cloud environments offer several compelling advantages compared to traditional on-premises targets:
+
+**Automation creates misconfiguration at scale.** Infrastructure as Code (Terraform, CloudFormation, Ansible) allows organizations to deploy hundreds of cloud resources in minutes. The same automation that enables rapid deployment enables rapid misconfiguration — one bad policy file might misconfigure 500 S3 buckets simultaneously.
+
+**IAM complexity creates privilege escalation paths.** AWS IAM alone supports hundreds of different permission types across 200+ services. Understanding exactly what permissions a given role has, and whether combining those permissions creates unintended escalation paths, requires careful analysis that most organizations do not perform. BloodHound-like tools for cloud IAM (AWS IAM mapping, PMapper) reveal these paths.
+
+**APIs are always-on attack surfaces.** Cloud resources are managed and accessed via APIs — REST APIs that accept HTTP requests from anywhere on the internet, authenticated via credentials or tokens. An exposed API key in a GitHub repository, a misconfigured S3 bucket policy, or a overpermissive Lambda function — each is an API endpoint that may be accessible from anywhere.
+
+**Ephemeral infrastructure is harder to monitor.** Cloud environments spin up and tear down resources constantly — auto-scaling groups add and remove instances, Lambda functions run for milliseconds, containers start and stop. Traditional security monitoring designed for persistent on-premises servers struggles to capture the security posture of infrastructure that lives for minutes or seconds.
+
+---
+
+## 7.1.2 Practice — Types of Cloud Services
+
+### Understanding Service Types Through the Attack Lens
+
+Each cloud service type has a distinct attack surface profile. This practice section builds the mental model of "given this cloud service, what are the likely attack vectors?"
+
+**EC2 / Compute Virtual Machines (IaaS):**
+Attack surface: the operating system (unpatched kernel, open ports, misconfigured services), the application running on it, the IAM instance role attached to it (which grants the instance permissions to call other AWS services), the security group (network firewall rules), and the SSH/RDP access configuration. An attacker who compromises an EC2 instance immediately gains the permissions of whatever IAM role is attached to it — which may be excessively permissive. This is one of the most impactful privilege escalation paths in AWS.
+
+**S3 / Object Storage:**
+Attack surface: bucket access policies (is the bucket public? does it allow public write? does the policy grant too broad access to authenticated AWS users?), object ACLs (individual file-level permissions), encryption configuration (are objects encrypted at rest?), logging (is S3 access logging enabled?), versioning (are deleted objects recoverable?). The most common S3 attack is simply accessing a public bucket and downloading everything in it. The second most common is finding credentials stored in S3 objects — application configuration files, environment files, backup archives.
+
+**Lambda / Serverless Functions (PaaS):**
+Attack surface: the function's IAM execution role (what AWS permissions does the function have when it runs?), the function's code (injection vulnerabilities in input handling), the event triggers (can an attacker trigger the function? with attacker-controlled input?), and environment variables (sensitive values like API keys and database passwords are commonly stored here). A Lambda function with a SQL injection vulnerability or an SSRF vulnerability can be used to exfiltrate its environment variables, which may contain credentials for the database, other AWS services, or third-party APIs.
+
+**RDS / Managed Databases (PaaS):**
+Attack surface: publicly accessible configuration (is the database accessible from the internet, or only from within the VPC?), authentication configuration (strong passwords? IAM database authentication enabled?), encryption in transit (SSL/TLS required for connections?), encryption at rest, automated backups (are snapshots publicly accessible?), and parameter groups (database configuration that affects security).
+
+**API Gateway (PaaS):**
+Attack surface: authentication and authorization (is every endpoint properly authenticated? are there unauthenticated endpoints that should not be?), input validation (injection vulnerabilities), rate limiting (DoS vulnerability if unlimited requests are allowed), CORS configuration (cross-origin request security), and integration IAM permissions (what AWS services can this API trigger, and with what permissions?).
+
+### The Mental Model for Cloud Attack Research
+
+When performing reconnaissance on a cloud environment, the research workflow is:
+
+First, identify what cloud services the target uses. This can be done through OSINT: job listings mentioning specific cloud services reveal the technology stack; DNS records may reveal cloud CDN or API endpoints; HTTP headers may reveal cloud provider origins; SSL certificate transparency logs reveal cloud subdomain names. Shodan and Censys index cloud service metadata.
+
+Second, map the external attack surface: what endpoints are internet-accessible? What APIs are documented or discoverable? What cloud storage buckets have the organization's name? (AWS S3 bucket names are globally unique and many organizations use predictable naming like companyname-backup, companyname-prod-assets, etc.)
+
+Third, identify the identity model: which cloud accounts exist? (Often discoverable through email-based SSO login attempts or through cloud provider account enumeration.) What IAM users and roles are configured? (Sometimes partially visible through public IAM policies.)
+
+---
+
+## 7.1.3 Credential Harvesting
+
+### Why Credentials Are the Master Key to Cloud Environments
+
+In traditional on-premises environments, an attacker needed multiple steps to move from initial access to data theft: exploit a vulnerability, gain a shell, escalate privileges, move laterally, reach the data. In cloud environments, if an attacker obtains valid credentials — an access key, a session token, a service account key — they may have direct, authenticated access to the crown jewels with zero additional exploitation steps.
+
+This is why credential harvesting is the most impactful single attack category against cloud environments. Unlike a network-based exploit that requires the target to be running a specific vulnerable software version, stolen credentials work regardless of the technical sophistication of the underlying infrastructure.
+
+### Source 1: Exposed Credentials in Code Repositories
+
+The most frequently exploited source of cloud credentials is developers committing credentials to version control — specifically public GitHub repositories, though GitLab, Bitbucket, and similar platforms also have this problem.
+
+The scenario is extremely common: a developer creates an application that accesses AWS S3 or calls an external API. During development, they hardcode their AWS access key and secret key directly into the code for convenience ("I'll fix it before commit"). They forget. They commit. The code goes to a public GitHub repository. Within minutes, automated scanning tools that continuously watch GitHub for exposed credentials find the key and begin using it.
+
+How attackers find exposed credentials: Tools like TruffleHog, GitLeaks, and Gitleaks scan repositories for patterns matching API key formats. Commercial products and underground services continuously monitor GitHub pushes for credential patterns. AWS itself monitors for AWS access keys exposed in public repositories and will proactively notify the account owner — but the damage is often done within minutes of exposure.
+
+**Tools for assessing this attack vector:**
+
+TruffleHog: `trufflehog github --org=<organization_name>` scans all public repositories of a GitHub organization for secrets. `trufflehog git <repo_url>` scans a specific repository including its full commit history (credentials committed and later "deleted" remain in the history). The `--only-verified` flag attempts to verify whether found credentials are still active.
+
+GitLeaks: `gitleaks detect --source . --report-format json --report-path report.json` scans the current directory (a cloned repository) for secrets. Highly configurable with custom rules.
+
+**What to look for:** AWS access key IDs (begin with AKIA for long-term user keys or ASIA for temporary session keys), AWS secret access keys, Azure service principal secrets, GCP service account JSON key files, GitHub personal access tokens, Stripe API keys, Twilio auth tokens, database connection strings, .env files, terraform.tfvars files.
+
+### Source 2: Credential Harvesting via Social Engineering and Phishing
+
+Cloud management consoles (AWS Console, Azure Portal, GCP Console) are web applications — they accept usernames and passwords over HTTPS, just like any other web login. Phishing attacks targeting cloud console credentials are effective because:
+
+The AWS console login URL (https://account-id.signin.aws.amazon.com/console) can be impersonated with typosquatting domains. A phishing email claiming a security alert for an AWS account can direct victims to a convincing fake login page. If the victim enters their credentials, the attacker immediately has console access.
+
+The Social-Engineer Toolkit (SET) credential harvesting attack — referenced in the module context — works exactly here: SET can clone the AWS console login page and serve it from an attacker-controlled server, capturing entered credentials in real time. `setoolkit` → Social-Engineering Attacks → Website Attack Vectors → Credential Harvester Attack Method → Site Cloner → enter `https://console.aws.amazon.com` as the URL to clone.
+
+The defense: MFA (Multi-Factor Authentication) on cloud console accounts. Even with a phished password, the attacker cannot complete login without the second factor. This is why MFA on cloud root and IAM accounts is the single most impactful cloud security control.
+
+### Source 3: Metadata Service Credential Theft via SSRF
+
+The cloud instance metadata service is a critical component of how cloud compute instances obtain their IAM credentials. This is covered in detail in 7.1.7 (Metadata Service Attacks), but it is listed here because it is one of the most important credential harvesting techniques specific to cloud environments.
+
+### Source 4: Credential Theft from Application Secrets Storage
+
+Applications running in cloud environments need to store sensitive configuration values — database passwords, API keys, third-party service credentials. Common insecure storage patterns include:
+
+Environment variables in container images that get pushed to public container registries. Configuration files stored in public S3 buckets. Database passwords hardcoded in Lambda function code. Secrets committed in Terraform state files that are stored in accessible S3 buckets without proper encryption. Application logs that inadvertently include authentication tokens or passwords (a surprisingly common misconfiguration where debug logging captures full HTTP headers including Authorization headers).
+
+Secure secrets management services exist specifically to address this: AWS Secrets Manager, AWS Parameter Store, Azure Key Vault, GCP Secret Manager. These services store secrets encrypted and provide audited, access-controlled retrieval. Applications running in cloud environments should never store secrets in environment variables or configuration files — they should retrieve them at runtime from the secrets management service.
+
+### Source 5: Credential Theft from Cloud Configuration Files
+
+The AWS CLI stores credentials in `~/.aws/credentials` and `~/.aws/config` on the developer's local machine. If a developer's laptop is compromised — through malware, physical access, or a compromised backup — these files provide immediate cloud access. Azure CLI stores credentials in `~/.azure/`. GCP CLI stores credentials in `~/.config/gcloud/`.
+
+Post-exploitation on a developer's machine specifically targets these files. Malware designed for developer machine compromise (like the various credential-stealing Trojans targeting macOS developer workstations in recent years) explicitly looks for cloud credential files in addition to browser stored credentials and cryptocurrency wallets.
+
+### Source 6: IAM User and Access Key Enumeration
+
+AWS IAM users and roles often reveal their identifiers through error messages, API responses, and resource ARNs (Amazon Resource Names) that appear in application responses. An attacker can use the AWS CLI to verify whether a specific access key is valid and what account it belongs to: `aws sts get-caller-identity --access-key-id AKIA... --secret-access-key ...`. A successful response reveals the account ID, user ID, and ARN — confirming the key is valid and providing the starting point for privilege enumeration.
+
+---
+
+## 7.1.4 Practice — Credential Harvesting
+
+### Assessing Exposed Credentials in a Target Organization
+
+A systematic cloud credential harvesting assessment for an authorized engagement follows this workflow:
+
+**Phase 1 — Passive OSINT:**
+Search GitHub for organization-specific credential patterns: `org:<orgname> AWS_SECRET` or `org:<orgname> password DB_PASSWORD` using GitHub's search. Search for the organization's domain in credential dumps using services like HaveIBeenPwned (for checking whether org email addresses appear in breach databases). Search Pastebin and similar paste sites for the organization's name combined with credential patterns.
+
+**Phase 2 — Repository Scanning:**
+Clone all public repositories associated with the organization: `gh repo list <orgname> --limit 1000 | awk '{print $1}' | xargs -I{} gh repo clone {}`. Run TruffleHog across all cloned repositories including full history: `trufflehog git . --since-commit HEAD~1000`. Examine terraform state files, .env.example files (which often contain real values despite the "example" name), CI/CD configuration files (GitHub Actions workflows, .travis.yml, .circleci/config.yml — these sometimes contain secrets in plaintext).
+
+**Phase 3 — Verification Without Exploitation:**
+For discovered credentials in an authorized assessment, verify the key is still active using `aws sts get-caller-identity`. Document the finding immediately — do not use the credential for further access until the scope is confirmed and the client is notified. In a real penetration test, discovered valid credentials should be reported to the client immediately, as they may represent an active ongoing compromise risk beyond the scope of the engagement.
+
+**Phase 4 — Phishing Simulation:**
+Using an authorized phishing engagement scope, deploy a credential harvesting campaign targeting cloud console logins. Use Gophish (a phishing simulation platform) to send a phishing email impersonating an AWS security notification. Host the phishing page using SET or Evilginx2. Evilginx2 is a man-in-the-middle phishing framework that can capture session cookies in addition to credentials — bypassing MFA by stealing the post-authentication session token rather than just the password.
+
+---
+
+## 7.1.5 Privilege Escalation
+
+### The IAM Privilege Escalation Problem
+
+Once an attacker has any valid AWS credential — even one attached to a severely restricted IAM user — the next question is: can this access be used to obtain more permissions? This is cloud privilege escalation, and it is one of the most technically complex and consequential areas of cloud security.
+
+The core insight: IAM privilege escalation does not require exploiting a vulnerability in the traditional sense. It exploits the *combined effect* of permissions that are individually reasonable but collectively create an unintended escalation path. An IAM user who can create new IAM policies AND attach policies to their own user has effectively unlimited privilege — they can create a policy granting themselves Administrator access and attach it. Neither "create policy" nor "attach policy" is inherently dangerous, but combined, they enable full privilege escalation.
+
+### AWS IAM Privilege Escalation Paths — The Taxonomy
+
+Researchers at Rhino Security Labs documented numerous IAM privilege escalation paths. The key patterns:
+
+**Creating/Modifying IAM Policies:**
+If a user has `iam:CreatePolicyVersion` and the ARN of an existing managed policy, they can create a new version of that policy with Administrator access and set it as the default. If they have `iam:SetDefaultPolicyVersion`, they can activate this new version. If they have `iam:AttachUserPolicy` or `iam:AttachRolePolicy`, they can attach the AdministratorAccess managed policy directly.
+
+**Assuming Roles:**
+If a user has `sts:AssumeRole` and the role's trust policy allows it (or can be modified to allow it), they can assume a more privileged role. `iam:UpdateAssumeRolePolicy` allows modifying which principals can assume a role — an attacker with this permission can modify a high-privilege role's trust policy to allow their user to assume it.
+
+**Creating Access Keys:**
+`iam:CreateAccessKey` on another user's account allows creating access keys for that user — effectively gaining that user's permissions. If the target user has higher privileges than the attacker, this is privilege escalation.
+
+**Lambda and EC2 Role Abuse:**
+If a user has `lambda:CreateFunction` and `iam:PassRole`, they can create a Lambda function with a highly privileged execution role and execute arbitrary code in the context of that role. Similarly, `ec2:RunInstances` with `iam:PassRole` allows launching an EC2 instance with a powerful instance profile and executing commands on it (via user data scripts that run at launch, or by SSM if it's enabled).
+
+**SSM Parameter Store and Secrets Manager:**
+`ssm:GetParameter` or `secretsmanager:GetSecretValue` may allow reading stored credentials for other services — database passwords, API keys, other IAM user credentials stored as secrets.
+
+### The PMapper Tool for IAM Privilege Escalation Analysis
+
+PMapper (Principal Mapper) is an open-source tool that analyzes IAM configurations to identify privilege escalation paths. It models IAM relationships as a graph and uses path-finding algorithms to determine whether a given principal can reach Administrator through any combination of permitted actions.
+
+Installation: `pip install principalmapper`. Analysis: `pmapper graph --create` (generates the graph of the target account's IAM relationships) then `pmapper analysis --output-type text` (identifies escalation paths). `pmapper query "preset privesc --query who can privesc"` queries for all principals that can escalate to Administrator.
+
+In an authorized penetration test, PMapper running against the target account can identify dozens of privilege escalation paths that the organization's security team is unaware of — because no human can mentally model all the interactions between hundreds of IAM principals and thousands of permission combinations.
+
+### AWS IAM Privilege Escalation — Practical Attack Example
+
+Starting position: the attacker has obtained credentials for an IAM user named `developer-build` through a leaked GitHub repository. Initial enumeration reveals the user has: `s3:GetObject` (can read S3 objects), `lambda:CreateFunction` (can create Lambda functions), `iam:PassRole` (can pass roles to services), and `lambda:InvokeFunction` (can invoke Lambda functions). The user also has access to list available roles.
+
+The escalation path: create a Lambda function and pass it a highly privileged role (such as a deployment role used by the organization's CI/CD pipeline). The Lambda function's code calls `boto3.client('iam').list_users()` and `boto3.client('iam').list_roles()` — actions that the Lambda execution role can perform but the `developer-build` user cannot directly. The attacker invokes the Lambda function and reads the output, gaining information accessible to the privileged role. With further Lambda invocations, they can effectively use any IAM permission the execution role has — including `iam:CreateUser` and `iam:AttachUserPolicy`, allowing creation of a new Administrator user.
+
+---
+
+## 7.1.6 Account Takeover
+
+### What Is Cloud Account Takeover?
+
+Cloud account takeover refers to an attacker gaining control of a cloud account — not just a single IAM user or service credential, but the root account or administrator-level access that allows modifying any aspect of the cloud environment.
+
+Full account takeover in AWS means compromising the root account (the email/password associated with the AWS account itself) or achieving IAM Administrator access (a managed policy with `*:*` permissions). At this level, an attacker can: exfiltrate all data across all services, delete all resources (a devastating destructive capability — organizations have lost data permanently through cloud account compromise), modify billing to incur massive charges (cryptomining in the victim's account), create backdoor IAM users for persistent access, disable logging and monitoring, and move laterally to any system or service connected to the AWS account.
+
+### Account Takeover via Root Credential Compromise
+
+The AWS root account is the email address and password used to create the AWS account. It has unlimited, irrevocable access to everything in the account. Best practice is to never use the root account after initial setup — create IAM administrator users for day-to-day administration. Despite this guidance, many organizations still have the root account active with a weak password and no MFA.
+
+Compromising the root account follows the same path as any credential compromise: phishing the email address associated with the account, password spraying if the email is known, or finding the credential in a breach database. If the root account uses the same password as a service that was breached, and MFA is not enabled, the attacker can log into the AWS console with full Administrator access.
+
+### Account Takeover via IAM Privilege Escalation
+
+As described in 7.1.5, an attacker who starts with any valid IAM credential may be able to escalate to Administrator through IAM permission abuse. The end state — Administrator IAM access — is effectively account takeover from a practical perspective.
+
+### Account Takeover via OAuth and Federated Identity Abuse
+
+Modern cloud environments often use federated identity — employees log into cloud resources using their corporate identity (Azure AD, Okta, Google Workspace) rather than cloud-native credentials. If an attacker compromises the identity provider (the corporate SSO system), they may be able to generate valid tokens for cloud services without having any cloud-native credentials at all.
+
+Azure AD/Entra ID is particularly important here: many organizations use Azure AD as their identity provider for both Microsoft 365 (email, Teams, SharePoint) and Azure cloud resources. A compromised Azure AD account — through phishing, password spray, or token theft — may grant access to all Azure cloud resources that the victim is authorized for.
+
+**OAuth token theft:** Applications that use OAuth to access cloud resources on behalf of users obtain access tokens. If an attacker can steal a valid OAuth access token (through an XSS vulnerability in a web application, through a malicious OAuth app, or through network interception), they can make API calls using that token without knowing any password. Tokens are generally short-lived but may be valid for hours, and refresh tokens may be valid indefinitely.
+
+**The Pass-the-Token attack:** In Azure environments, a compromised access token can be used directly with the Azure CLI or REST API: `az login --use-device-code --tenant <tenant_id>` followed by importing a stolen token. The tool ROADtools (Reconnaissance as a Service for Azure AD) enables enumeration of Azure AD using captured tokens: `roadrecon gather -t <token>`.
+
+### Preventing Account Takeover
+
+MFA on all accounts is the single most impactful control — even a stolen password cannot be used if a TOTP code or hardware security key is required. Privilege separation (never use root for anything, create specific IAM roles for specific functions) limits blast radius. Monitoring and alerting on console logins from unusual IPs or at unusual times (via CloudTrail and GuardDuty for AWS) provides detection capability. Regular access key rotation reduces the window of exposure for compromised credentials.
+
+---
+
+## 7.1.7 Metadata Service Attacks
+
+### What Is the Cloud Metadata Service?
+
+Every major cloud provider's compute instances have access to a special HTTP service that provides information about the running instance and — critically — retrieves temporary IAM credentials for the instance's attached role. This service is accessed via a fixed, non-routable IP address: `169.254.169.254` on AWS and Azure, `metadata.google.internal` on GCP.
+
+This IP address is in the link-local address space (169.254.0.0/16) — it is not routable over the internet and can only be reached from within the instance itself, or from the local network layer. This is how AWS secures the metadata service: only code running on the EC2 instance can access it.
+
+The metadata service provides: instance identity (account ID, instance ID, region, instance type), network configuration (internal IP, hostname, MAC address, security groups), tags applied to the instance, and — most critically — temporary IAM credentials for the instance's attached role, automatically rotated and always valid.
+
+**The endpoint for IAM credentials on AWS:** `http://169.254.169.254/latest/meta-data/iam/security-credentials/<role-name>` returns a JSON object with `AccessKeyId`, `SecretAccessKey`, and `Token` — valid temporary credentials that can be used with any AWS API or CLI command.
+
+### Why Metadata Service Attacks Are Catastrophic
+
+If an attacker can make the instance's web server or application issue an HTTP request to `169.254.169.254`, they can steal the IAM credentials for that instance's role. These credentials are then usable from anywhere on the internet (not just from within the instance) until they expire (typically within 6 hours, though new credentials are continuously issued).
+
+The EC2 instance role is often configured with broad permissions — especially in older environments where "just give it AdminRole to make things easy" was a common practice. Compromising these credentials through the metadata service can instantly provide Administrator access to the entire AWS account.
+
+### The SSRF Vector
+
+The most common mechanism for exploiting the metadata service is SSRF (Server-Side Request Forgery). SSRF is a web application vulnerability where the application can be made to issue HTTP requests to attacker-specified URLs — including internal URLs like the metadata service endpoint.
+
+**A concrete SSRF to Metadata Service attack example:**
+
+Target: a web application that allows users to provide a URL for the application to fetch (an "import from URL" feature, a webhook testing tool, a URL preview generator, etc.).
+
+Attack: the attacker submits the URL `http://169.254.169.254/latest/meta-data/iam/security-credentials/` as the fetch target. If the application is running on an EC2 instance with an attached IAM role and SSRF is possible, the application fetches this URL from the server side and returns the response — including the list of attached roles. The attacker then fetches `http://169.254.169.254/latest/meta-data/iam/security-credentials/MyAppRole` and receives the temporary credentials.
+
+**Real-world example:** The 2019 Capital One breach was executed through exactly this attack chain. An SSRF vulnerability in a misconfigured WAF (Web Application Firewall) running on an EC2 instance allowed the attacker to access the metadata service and obtain the EC2 instance role's credentials. Those credentials had read access to over 700 S3 buckets containing 100 million customer records.
+
+### IMDSv2 — The Defense and Its Bypass Challenges
+
+AWS introduced IMDSv2 (Instance Metadata Service version 2) to mitigate SSRF-based metadata attacks. IMDSv2 requires a two-step authentication process: first, the instance must PUT a request to `http://169.254.169.254/latest/api/token` with a TTL header to receive a session token. Then all subsequent metadata requests must include that token in an `X-aws-ec2-metadata-token` HTTP header.
+
+Simple SSRF attacks cannot exploit IMDSv2 because they typically can only control the URL (HTTP GET request) and cannot control HTTP headers. An attacker would need an SSRF vulnerability that allows full control of HTTP method and headers to exploit IMDSv2.
+
+However, IMDSv2 must be actively enforced — many existing EC2 instances still use IMDSv1 by default, and organizations must explicitly migrate. AWS allows enforcing IMDSv2 at the account level via Service Control Policies.
+
+**GCP's Metadata Service:** GCP requires a custom HTTP header (`Metadata-Flavor: Google`) on all metadata service requests. This provides some SSRF protection since typical SSRF exploits cannot control request headers. However, if SSRF allows header control, this protection is bypassed.
+
+### Practical Exploitation Walkthrough
+
+In a lab environment with an EC2 instance having IMDSv1 and an attached IAM role:
+
+Step 1: From within the instance, access the metadata service: `curl http://169.254.169.254/latest/meta-data/`
+
+Step 2: Discover the IAM role name: `curl http://169.254.169.254/latest/meta-data/iam/security-credentials/`
+
+Step 3: Retrieve the credentials: `curl http://169.254.169.254/latest/meta-data/iam/security-credentials/MyRole`
+
+Step 4: The response is a JSON object with `AccessKeyId`, `SecretAccessKey`, and `Token`. Export these as environment variables: `export AWS_ACCESS_KEY_ID=ASIA...`, `export AWS_SECRET_ACCESS_KEY=...`, `export AWS_SESSION_TOKEN=...`
+
+Step 5: Use the credentials from anywhere: `aws sts get-caller-identity` confirms the identity. `aws s3 ls` lists all accessible S3 buckets. From here, all further actions are constrained only by the permissions of the IAM role.
+
+---
+
+## 7.1.8 Attacks Against Misconfigured Cloud Assets
+
+### The Misconfiguration Epidemic
+
+Security company reports consistently identify misconfiguration as the leading cause of cloud security incidents — accounting for the majority of cloud data breaches. This is not because cloud providers build insecure products. It is because cloud platforms are enormously complex, default configurations prioritize availability and ease-of-use over security, and the velocity of cloud adoption often outpaces security maturity.
+
+The most impactful misconfigurations follow predictable patterns that security professionals must know how to identify.
+
+### Public S3 Buckets and Object Storage Exposure
+
+AWS S3 buckets and their equivalents (Azure Blob Storage, GCP Cloud Storage) are the most commonly misconfigured cloud resource type, responsible for dozens of high-profile breaches exposing hundreds of millions of records.
+
+**S3 access control layers (and where each fails):**
+
+Block Public Access Settings: AWS introduced account-level and bucket-level "Block Public Access" settings that override any bucket or object ACL that would make the content public. When these are OFF (not blocking public access), other misconfigurations can make data public. When they are ON for the account, no bucket in that account can be made public regardless of individual bucket configuration. Many organizations have these settings OFF — often because legacy applications relied on public bucket configurations.
+
+Bucket Policies: JSON documents defining who can access the bucket and what they can do. A policy containing `"Principal": "*"` (any principal, including unauthenticated internet users) for `s3:GetObject` makes all objects in the bucket publicly downloadable. This is a misconfiguration responsible for massive data exposures.
+
+Object ACLs: Individual objects can have their own access control lists. `public-read` ACL on an object makes it downloadable by anyone regardless of bucket policy.
+
+**Finding public buckets:**
+
+GrayhatWarfare (buckets.grayhatwarfare.com): a searchable index of public S3 buckets and their contents. Search by organization name to find public buckets belonging to the target.
+
+Cloud_enum: `python3 cloud_enum.py -k companyname` enumerates S3 buckets, Azure Blob containers, and GCP buckets matching common naming patterns based on the provided keyword.
+
+S3Scanner: `s3scanner scan --bucket companyname-backup` checks whether a specific bucket is public and optionally dumps its contents.
+
+Once a public bucket is identified, enumerate its contents: `aws s3 ls s3://bucketname --no-sign-request` (the `--no-sign-request` flag makes the request as an unauthenticated user). If the list succeeds, the bucket is publicly listable. Download interesting files: `aws s3 sync s3://bucketname ./local-copy --no-sign-request`.
+
+**What is commonly found in exposed S3 buckets:**
+
+Database backups (often unencrypted .sql files), environment files (.env) containing database credentials and API keys, application source code (exposing internal architecture and hardcoded secrets), customer personal data (names, emails, phone numbers, addresses), financial records (invoices, payment data), employee records (HR data, salary information), authentication credentials and API keys, and SSL/TLS private keys.
+
+### Overpermissive Security Groups
+
+AWS Security Groups function as virtual firewalls for EC2 instances, controlling inbound and outbound traffic. The most dangerous misconfiguration: inbound rules with `0.0.0.0/0` (all IPv4 internet) as the source for sensitive ports.
+
+Common critical exposures: SSH (port 22) open to the entire internet allows brute-force and credential-stuffing attacks against SSH. RDP (port 3389) open to the internet — same issue for Windows instances. MySQL/PostgreSQL (ports 3306/5432) open to the internet means the database is directly accessible from anywhere. Redis (port 6379) open to the internet — Redis has no authentication by default in older versions, and exposed Redis instances have been used for data theft, cryptomining, and as a foothold for lateral movement. Elasticsearch (port 9200) open to the internet — Elasticsearch also had no authentication by default until version 8.x, and exposed clusters have leaked hundreds of millions of records.
+
+**Finding exposed cloud services:**
+
+Shodan search: `org:"Amazon" port:3306` finds MySQL databases hosted on AWS that are internet-accessible. Refining for specific organizations: `org:"Amazon" port:3306 country:"US" ssl:"companyname"`. Censys offers similar functionality with different search syntax.
+
+Masscan for targeted scanning of known cloud IP ranges: `masscan -p 6379,9200,27017 --rate 100000 <AWS_IP_range>` scans for Redis, Elasticsearch, and MongoDB on AWS IP ranges.
+
+### Publicly Accessible Cloud Databases
+
+Beyond improperly configured security groups, cloud-managed databases (RDS, Azure SQL, Cloud SQL) may be configured with "publicly accessible" enabled — a configuration option that assigns the database a public IP and makes it reachable from outside the VPC.
+
+For any internet-accessible database with weak or default credentials, authentication attacks are straightforward: `hydra -l admin -P /usr/share/wordlists/rockyou.txt <db_ip> mysql`. For databases with strong credentials but no encryption in transit, network sniffing (from a MITM position) can capture credentials and query content.
+
+### Exposed Kubernetes API Servers
+
+Kubernetes (K8s) is the dominant container orchestration platform, used extensively in cloud environments. The Kubernetes API server is the control plane component that all administration goes through. An exposed Kubernetes API server — accessible from the internet without proper authentication — is catastrophic.
+
+Finding exposed Kubernetes API servers: Shodan search `kubernetes` returns many results including misconfigured clusters. The `kubectl` client can be used to probe: `kubectl --server https://<ip>:6443 get pods --namespace=default`. If this returns pod information without authentication, the cluster is completely open.
+
+An attacker with access to the Kubernetes API can create privileged pods that mount the host filesystem, escape container isolation to the underlying node, and access cloud provider credentials via the node's metadata service. This provides a path from Kubernetes API access to full cloud account compromise.
+
+### Overpermissive IAM Policies
+
+The AWS IAM "AdministratorAccess" managed policy (`"Action": "*"`, `"Resource": "*"`) grants unlimited access to everything in the AWS account. This policy is frequently attached to IAM users, roles, or groups for convenience — "I'll restrict it later" is a common developer mindset that persists indefinitely.
+
+Beyond full Administrator, specific overpermissive patterns are extremely common: `s3:*` on all resources (can read/write/delete any S3 object in any bucket), `ec2:*` on all resources (can launch, modify, or terminate any EC2 instance), `iam:*` on all resources (enables all IAM privilege escalation attacks from 7.1.5).
+
+**Assessment tool:** Prowler is an open-source AWS security assessment tool that checks hundreds of security controls including IAM overpermission: `prowler -g iam` runs all IAM-related checks. ScoutSuite is an alternative multi-cloud security auditing tool: `scout aws --report-dir ./report` generates an HTML report of all identified security issues across the assessed AWS account.
+
+### Exposed Cloud Snapshots and Backups
+
+AWS EBS snapshots (backups of EC2 disk volumes) and RDS snapshots (database backups) can be made public — either intentionally (for sharing) or through misconfiguration. A public EBS snapshot contains the entire disk image of the EC2 instance at the time of the snapshot, potentially including application data, configuration files, and credentials cached by the running application.
+
+Finding public snapshots: `aws ec2 describe-snapshots --owner-ids all --filters Name=tag:Name,Values=*companyname*` or using tools like cloudsploit that scan for publicly shared snapshots associated with target AWS accounts.
+
+Mounting a public snapshot: create an EBS volume from the public snapshot in your own AWS account, attach it to your own EC2 instance, mount it, and browse the filesystem for sensitive data. This entirely legitimate AWS feature becomes a critical data exposure when snapshots are incorrectly made public.
+
+---
+
+## 7.1.9 Resource Exhaustion and DoS Attacks
+
+### The Economics of Cloud DoS
+
+Cloud DoS attacks have a fundamentally different character than traditional on-premises DoS. In on-premises environments, DoS means consuming more resources than a fixed hardware deployment can provide — once you exhaust the capacity of the servers, you have succeeded. In cloud environments, auto-scaling can handle legitimate demand spikes by provisioning additional resources automatically.
+
+This creates two distinct cloud DoS scenarios: attacks that bypass auto-scaling to cause genuine unavailability, and attacks that cause auto-scaling to provision massive resources — successfully maintaining availability but generating enormous unexpected cloud bills. The second type is called "economic denial of sustainability" or "denial of wallet."
+
+### Denial of Wallet Attacks
+
+If an attacker can trigger auto-scaling in a cloud environment, the target may successfully handle the traffic load — but their cloud bill for that period could be tens of thousands of dollars. If an organization's cloud budget is consumed, they may be forced to manually terminate resources or implement cost controls that inadvertently take down legitimate services.
+
+**Attack vectors for denial of wallet:**
+
+Amplification of expensive API calls: many cloud-based APIs trigger backend processing (image resizing, video transcoding, OCR, machine learning inference) that is significantly more expensive than a simple HTTP response. Flooding such an API endpoint with legitimate-looking requests forces the cloud backend to perform expensive operations at scale.
+
+Lambda function cost attacks: Lambda is billed per invocation and per GB-second of memory used. A Lambda function exposed via API Gateway can be invoked unlimited times — with appropriate rate limiting controls absent, tens of millions of invocations per day are possible, generating significant Lambda costs.
+
+Data egress cost attacks: cloud providers charge for data transferred out of their network. A publicly accessible S3 bucket containing large files can be downloaded repeatedly by an attacker (from many IPs to avoid rate limiting), generating significant egress costs that are billed to the bucket owner.
+
+### API Abuse and Rate Limit Exhaustion
+
+Cloud APIs typically have rate limits — maximum request rates per account, per user, or per IP address. Reaching these limits causes throttling of legitimate requests. An attacker who knows a target's API endpoint can flood it with requests, causing the target's own legitimate users to hit rate limits and experience service degradation.
+
+This is distinct from traditional network-level DDoS: the attacker sends legitimate API requests that the API gateway processes, consumes rate limit quotas, and returns throttling errors to subsequent legitimate callers. The attack traffic may be small in volume but targeted at quota exhaustion.
+
+### Resource Exhaustion Through Feature Abuse
+
+Many cloud applications expose resource-intensive operations. A cloud-based document conversion service might convert any uploaded file to PDF — an attacker can upload millions of complex files, each triggering expensive conversion operations. A machine learning inference API endpoint can be called millions of times with adversarial inputs. A search index can be queried with maximally complex search queries that consume disproportionate database resources.
+
+### Account-Level Resource Limits
+
+AWS, Azure, and GCP all impose account-level service limits (quotas): maximum number of EC2 instances, Lambda concurrency, RDS instances, etc. These limits can be exhausted by an attacker with account access who wants to prevent legitimate resource deployment. Running `aws ec2 run-instances` in a loop to deploy thousands of EC2 instances until the account limit is reached prevents the victim from deploying any new instances — a form of DoS using legitimate API operations.
+
+This is why cost and service limit monitoring (AWS Cost Explorer, AWS Budgets, Azure Cost Management) is a security control, not just a financial tool. Unexpected resource deployment is an indicator of compromise.
+
+---
+
+## 7.1.10 Cloud Malware Injection Attacks
+
+### What Is Cloud Malware Injection?
+
+Cloud malware injection attacks refer to techniques where an attacker inserts malicious code, processes, or data into the cloud environment to achieve persistent access, data theft, or disruption. Unlike traditional endpoint malware, cloud malware injection targets the cloud management plane, cloud services, and cloud-native compute environments.
+
+### Serverless Function Injection
+
+Lambda functions (and their equivalents — Azure Functions, GCP Cloud Functions) are code that runs in response to events. If an attacker gains write access to a Lambda function, they can modify the function code to include malicious behavior: exfiltrating all invocation data to an external endpoint, creating persistent backdoor access, or modifying the function's output to return attacker-controlled data to callers.
+
+**Attack scenario:** An attacker gains access to IAM credentials with `lambda:UpdateFunctionCode` permission. They modify a payment processing Lambda function to copy all payment data (credit card numbers, customer details) to an attacker-controlled S3 bucket or HTTP endpoint before processing the legitimate payment. The legitimate payment still completes normally, so victims have no indication. The malicious code persists until the function is redeployed or the code modification is detected.
+
+**Detection:** CloudTrail logs `UpdateFunctionCode` API calls. Lambda function code versioning provides an audit trail of code changes. Comparing deployed function code against the CI/CD pipeline source provides integrity verification.
+
+### Container Image Poisoning
+
+Organizations using containerized workloads (Docker containers on ECS, EKS, or GCP GKE) pull container images from registries — Docker Hub, AWS ECR, or custom private registries. If an attacker can push a malicious image to a registry the organization trusts, every instance that pulls and runs that image is compromised.
+
+**Attack vectors:**
+Compromising the image build pipeline (CI/CD systems like Jenkins, GitHub Actions, CircleCI) to inject malicious code during the build process — the resulting image contains malware but passes all automated tests because the tests are also modified.
+
+Typosquatting on Docker Hub: creating image names similar to popular base images (nginx vs ngin-x, ubuntu vs ubunt-u) hoping developers accidentally pull the malicious image.
+
+Dependency confusion attacks against the base image's package manager: if the container's Dockerfile runs `apt install` or `pip install`, packages that appear in both public and private repositories may be resolved to attacker-controlled public versions (this attack was demonstrated at scale in 2021 by researcher Alex Birsan, who received bug bounties from Apple, Microsoft, Tesla, and others by uploading malicious packages to PyPI, npm, and other public registries).
+
+### Cloud Storage Malware Delivery
+
+S3 buckets and similar object stores are commonly used to host static web content, software distribution, and application assets. If an attacker gains write access to a production S3 bucket hosting a website, they can inject malicious JavaScript (a web skimmer) that captures payment information from customers visiting the site.
+
+This is the mechanism behind Magecart attacks — a prominent threat actor group that specifically targets cloud-hosted e-commerce sites by injecting card-skimming JavaScript into S3 buckets serving website assets. The injected script sends captured card data to attacker-controlled endpoints in real time.
+
+### Database Injection in Cloud Environments
+
+SQL injection, NoSQL injection, and command injection vulnerabilities in cloud-hosted applications work identically to their on-premises counterparts — with the additional dimension that the compromised application may have IAM permissions to call other AWS services. A SQL injection in a cloud-hosted API can result in not just database data theft but also AWS credential theft (if the application server has a metadata service accessible IAM role) and lateral movement to other cloud services.
+
+---
+
+## 7.1.11 Side-Channel Attacks
+
+### The Concept of Side-Channel Attacks in Cloud Environments
+
+Side-channel attacks extract information from a system through indirect channels — not by directly reading data, but by observing the system's observable physical or timing characteristics. In traditional computing, side-channels include power consumption, electromagnetic emissions, and execution timing. In cloud environments, the shared multi-tenant infrastructure creates new side-channel opportunities specific to virtualization.
+
+### Co-Residency and Cache-Based Side Channels
+
+In a public cloud, multiple customers' virtual machines run on the same physical host hardware. This multi-tenancy is fundamental to cloud economics and is carefully managed by the hypervisor. However, certain hardware components are shared between VMs in ways that can create information leakage.
+
+**CPU Cache Side Channels:** Modern CPUs use hierarchical cache memory (L1, L2, L3) that is partially shared between processes (and potentially between VMs on the same physical host). The Spectre and Meltdown vulnerabilities (disclosed 2018) demonstrated that a process can infer what data a co-located process accessed by measuring cache timing — CPU cache accesses are orders of magnitude faster than main memory accesses, so whether data was in cache or not is measurable in timing.
+
+The attack requires co-residence — the attacker's VM must be running on the same physical host as the target VM. Cloud providers' VM placement algorithms are not completely unpredictable, and researchers have demonstrated techniques for achieving reliable co-residence by launching many VMs and using timing measurements to identify which ones share physical hardware.
+
+**Flush+Reload:** A widely studied cache side channel that works as follows. The attacker's process accesses a shared memory page (shared libraries are a common vector), then flushes that page from cache using the `clflush` instruction. After a period of time, the attacker reloads the page and measures the time. If the reload is fast (cache hit), the target process accessed that page during the interval. Repeating this across many memory addresses allows inferring which code paths the target executed, leaking information about private data processed by the target.
+
+### Hypervisor Vulnerabilities
+
+The hypervisor is the software layer that creates and manages virtual machines, enforcing isolation between tenants. A vulnerability in the hypervisor — allowing a guest VM to execute code in the hypervisor context or access another guest's memory — completely defeats VM isolation. These "VM escape" vulnerabilities are extremely rare and treated as the highest severity by cloud providers, but they exist and have been demonstrated:
+
+VENOM (Virtualized Environment Neglected Operations Manipulation, CVE-2015-3456): a vulnerability in the virtual floppy disk controller implemented in QEMU that allowed a guest VM to execute arbitrary code on the hypervisor host, potentially escaping VM isolation. Affected many virtualization platforms.
+
+Researchers at Project Zero and other organizations continuously discover hypervisor vulnerabilities that cloud providers patch on an accelerated timeline — often without publicly disclosing the vulnerability until all affected instances are updated.
+
+### Timing Attacks Against Cloud APIs
+
+Cloud APIs themselves can be vulnerable to timing attacks that reveal information about the underlying data. A classic example: a login endpoint that takes measurably longer to respond when the provided username exists but the password is wrong (because it performs a bcrypt comparison) versus when the username does not exist (because it short-circuits early). This timing difference allows an attacker to enumerate valid usernames by measuring response times — a timing-based username enumeration attack.
+
+In cloud environments, timing attacks against authentication APIs can be conducted at massive scale using cloud-based attacker infrastructure, sending thousands of requests per second and statistically analyzing the results.
+
+---
+
+## 7.1.12 Practice — Cloud Attack Types
+
+### Putting It All Together: A Cloud Penetration Test Workflow
+
+A cloud-focused penetration test against an authorized target follows a systematic workflow that builds from reconnaissance through exploitation to demonstrated impact.
+
+**Phase 1 — Cloud Asset Discovery and Enumeration:**
+
+Enumerate S3 buckets using naming convention guessing: `cloud_enum.py -k targetcompany` tries hundreds of common patterns (targetcompany-backup, targetcompany-prod, targetcompany-dev, targetcompany-logs, etc.). Use `aws s3 ls s3://<bucketname> --no-sign-request` to test public access for each discovered bucket. Record all publicly accessible buckets and their contents.
+
+Identify internet-facing cloud resources using Shodan: `org:"targetcompany" OR ssl:"targetcompany.com"`. This reveals EC2 instances, load balancers, and other internet-facing resources. Scan identified IP ranges for exposed services.
+
+Enumerate DNS for cloud indicators: CNAME records pointing to `*.amazonaws.com`, `*.cloudfront.net`, `*.s3-website*.amazonaws.com` (static website hosted on S3), `*.azurewebsites.net`, `*.cloudfunctions.net`. Each reveals the cloud service type used.
+
+**Phase 2 — Credential Discovery:**
+
+Run TruffleHog against all discovered public repositories: `trufflehog github --org=targetcompany --only-verified`. Check breach databases for email addresses belonging to the organization. Search for exposed AWS credentials: `grep -r "AKIA" . ` or `grep -r "aws_access_key" .` in cloned repositories.
+
+**Phase 3 — Authentication and Access Testing:**
+
+With any discovered credentials, determine current permissions: `aws sts get-caller-identity` (who am I?), `aws iam list-attached-user-policies --user-name <username>` (what policies do I have?), `aws iam simulate-principal-policy` (what can I actually do?).
+
+Run PMapper to identify privilege escalation paths from the current identity.
+
+**Phase 4 — Misconfiguration Assessment:**
+
+Run Prowler for automated misconfiguration assessment: `prowler -r <region> -f json`. Run ScoutSuite: `scout aws`. Review findings prioritized by severity — public S3 buckets, internet-accessible databases, and IAM privilege escalation paths are highest priority.
+
+**Phase 5 — Impact Demonstration:**
+
+For a penetration test, documenting potential impact is critical. For a public S3 bucket containing customer data: download a sample (with explicit client permission) and document the number of records exposed and their sensitivity. For an IAM privilege escalation path: execute the escalation path in a controlled manner, demonstrating the resulting permissions, then document the cleanup steps. For a metadata service vulnerability: demonstrate credential theft through the SSRF vector, obtain temporary credentials, enumerate what they can access, and report.
+
+---
+
+## 7.1.13 Tools and Software Development Kits (SDKs)
+
+### The AWS CLI and SDK — The Swiss Army Knife of Cloud Security
+
+The AWS CLI (Command Line Interface) and AWS SDKs (available for Python via boto3, JavaScript, Java, Go, and others) are the primary tools for interacting with AWS services programmatically. Understanding them is essential for both attackers and defenders — all cloud security assessment tools are built on top of these interfaces.
+
+**AWS CLI setup:** `aws configure` prompts for access key ID, secret access key, default region, and output format. These are stored in `~/.aws/credentials` and `~/.aws/config`. Multiple profiles can be configured for different accounts or roles.
+
+**Key investigative commands for cloud security assessment:**
+
+Identity and permissions: `aws sts get-caller-identity` (current identity), `aws iam get-user` (current user details), `aws iam list-attached-user-policies --user-name <user>` (attached managed policies), `aws iam list-user-policies --user-name <user>` (inline policies), `aws iam get-policy-version --policy-arn <arn> --version-id v1` (policy contents).
+
+S3 enumeration: `aws s3 ls` (list all buckets), `aws s3 ls s3://bucketname` (list bucket contents), `aws s3 cp s3://bucketname/file .` (download a file), `aws s3 sync s3://bucketname .` (sync entire bucket locally).
+
+EC2 enumeration: `aws ec2 describe-instances` (all instances with their configurations, security groups, IAM roles, VPC placement), `aws ec2 describe-security-groups` (all security group rules), `aws ec2 describe-snapshots --owner-ids self` (all snapshots).
+
+IAM enumeration: `aws iam list-users` (all IAM users), `aws iam list-roles` (all IAM roles), `aws iam list-groups` (all IAM groups), `aws iam list-policies --scope Local` (all custom managed policies), `aws iam get-account-authorization-details` (the most powerful single command — returns the complete IAM configuration of the account including all users, groups, roles, and their attached policies).
+
+CloudTrail (audit logging): `aws cloudtrail describe-trails` (what logging is configured), `aws cloudtrail get-trail-status --name <trail-name>` (is logging active?). If CloudTrail is not enabled or is not logging to a protected bucket, the attacker has reduced detection risk and should document this critical finding.
+
+### Specialized Cloud Security Assessment Tools
+
+**Prowler:** The most comprehensive open-source AWS security assessment tool. Checks 300+ controls across CIS AWS Benchmark, PCI DSS, HIPAA, GDPR, SOC2, and other frameworks. `prowler -M json -o /tmp/prowler-report` generates a machine-readable report. `prowler -c check11,check12` runs specific checks. `prowler -g iam` runs all IAM-related checks. Required reading for cloud security professionals.
+
+**ScoutSuite:** Multi-cloud security auditing tool supporting AWS, Azure, GCP, Oracle Cloud, and Alibaba Cloud. Generates an interactive HTML report with findings categorized by service and severity. `scout aws --report-dir ./report` for AWS. Useful for quick comprehensive assessment before deeper investigation.
+
+**Pacu:** AWS exploitation framework (the cloud equivalent of Metasploit). Provides modules for privilege escalation, data exfiltration, persistence, and reconnaissance: `run iam__privesc_scan` scans for privilege escalation paths, `run s3__bucket_finder` discovers S3 buckets, `run lambda__backdoor_new_roles` demonstrates backdooring Lambda. Pacu is designed for authorized penetration testing use.
+
+**CloudSploit:** Focuses on cloud misconfiguration detection with a simpler interface than ScoutSuite. Open-source version available: `node index.js --provider aws` scans the configured AWS account.
+
+**Enumerate-IAM:** Determines what permissions a set of credentials have by attempting all IAM actions and recording successes: `python3 enumerate-iam.py --access-key AKIA... --secret-key ...`. This is the brute-force approach to permission enumeration — useful when `iam:SimulatePrincipalPolicy` or `iam:GetPolicyVersion` are not available.
+
+**WeirdAAL (AWS Attack Library):** Collection of AWS attack scripts covering credential abuse, privilege escalation, data exfiltration, and persistence techniques. Used in authorized red team engagements.
+
+**Boto3 (Python AWS SDK):** The Python SDK for AWS. Cloud security scripts and tools are almost universally built on boto3: `pip install boto3`. Essential for writing custom assessment scripts, automating repetitive tasks, and building proof-of-concept exploit code for findings.
+
+**Azure-specific tools:** Roadtools (Azure AD enumeration and attack), AzureHound (BloodHound data collector for Azure AD), PowerZure (PowerShell-based Azure exploitation), MicroBurst (collection of Azure security assessment scripts).
+
+**GCP-specific tools:** GCPBucketBrute (GCP bucket enumeration), gcp_enum (GCP environment enumeration), GCPwn (GCP exploitation framework).
+
+### Container and Kubernetes Security Tools
+
+**Trivy:** Container image scanning for vulnerabilities: `trivy image <image_name>` scans a container image against CVE databases and returns a report of vulnerable packages and severity levels. Essential CI/CD integration for preventing deployment of vulnerable containers.
+
+**Kube-bench:** Kubernetes CIS Benchmark compliance checker: `kubectl apply -f kube-bench.yaml` runs the benchmark against the cluster. Identifies configuration issues like RBAC misconfigurations, exposed API servers, and insecure etcd access.
+
+**Kube-hunter:** Kubernetes penetration testing tool: `kube-hunter --remote <cluster-ip>` actively probes for vulnerabilities in a Kubernetes cluster. Finds issues like anonymous authentication, exposed dashboards, and privilege escalation paths through RBAC.
+
+**Falco:** Runtime security monitoring for containers and Kubernetes. Detects anomalous behavior in running containers based on syscall analysis: unauthorized file reads in sensitive directories, shell execution inside containers, network connections to unexpected destinations. Essential for detection and response in containerized environments.
+
+---
+
+## Summary — Module 7.0 and 7.1
+
+Cloud computing has fundamentally dissolved the traditional network perimeter, and the security profession has not fully caught up. The attacks covered in this section — credential harvesting from GitHub repositories, privilege escalation through IAM permission abuse, data theft from misconfigured S3 buckets, credential theft from the metadata service via SSRF — are not theoretical. They are the techniques documented in the breach reports of Capital One, Twitch, Toyota, Uber, Samsung, Nvidia, and dozens of other organizations that experienced cloud security incidents in recent years.
+
+The unifying theme across all cloud attacks is that they exploit the gap between what a cloud service was designed to provide and how the customer configured it. AWS S3 is not insecure — misconfigured public bucket policies are. AWS IAM is not insecure — excessively permissive roles that enable privilege escalation are. The metadata service is not insecure — applications vulnerable to SSRF that allow metadata service access are.
+
+This shifts the security professional's responsibility: cloud security is not primarily about finding software vulnerabilities in the traditional sense. It is about understanding the complex interaction of configuration decisions, IAM policy logic, network architecture choices, and operational practices — and finding where those interactions create unintended attack paths.
+
+The tools in 7.1.13 — Prowler, ScoutSuite, PMapper, Pacu, Trivy, Kube-bench — are the cloud security professional's primary instruments for this analysis. But tools only reveal what they are configured to check. The deep understanding of why each finding matters, what attack chain it enables, and how to communicate its impact to both technical and business audiences — that is what separates a cloud security practitioner from someone who runs a scanner.
+
+---
+***— End of Module 7.0 and 7.1 —***
+
+
+
+# MODULE 7.2 & 7.3: Explaining Common Attacks and Vulnerabilities Against Specialized Systems
+
+## Table of Contents
+
+- [7.2.1 Overview](#721-overview)
+- [7.2.2 Attacking Mobile Devices](#722-attacking-mobile-devices)
+- [7.2.3 Practice - Mobile Device Vulnerabilities](#723-practice---mobile-device-vulnerabilities)
+- [7.2.4 Practice - Attacking Mobile Devices](#724-practice---attacking-mobile-devices)
+- [7.2.5 Attacking Internet of Things (IoT) Devices](#725-attacking-internet-of-things-iot-devices)
+- [7.2.6 Analyzing IoT Protocols](#726-analyzing-iot-protocols)
+- [7.2.7 Practice - Analyzing IoT Protocols](#727-practice---analyzing-iot-protocols)
+- [7.2.8 IoT Security Special Considerations](#728-iot-security-special-considerations)
+- [7.2.9 Common IoT Vulnerabilities](#729-common-iot-vulnerabilities)
+- [7.2.10 Practice - Common IoT Vulnerabilities](#7210-practice---common-iot-vulnerabilities)
+- [7.2.11 Data Storage System Vulnerabilities](#7211-data-storage-system-vulnerabilities)
+- [7.2.12 Management Interface Vulnerabilities](#7212-management-interface-vulnerabilities)
+- [7.2.13 Practice - Management Interface Vulnerabilities](#7213-practice---management-interface-vulnerabilities)
+- [7.2.14 Exploiting Virtual Machines](#7214-exploiting-virtual-machines)
+- [7.2.15 Vulnerabilities Related to Containerized Workloads](#7215-vulnerabilities-related-to-containerized-workloads)
+- [7.2.16 Practice - Vulnerabilities Related to Containerized Workloads](#7216-practice---vulnerabilities-related-to-containerized-workloads)
+- [7.3 Summary](#73-summary)
+
+---
+
+## 7.2.1 Overview
+
+### The Expanding Definition of "Computer"
+
+For decades, cybersecurity professionals focused almost exclusively on what we traditionally call computers: servers, workstations, and laptops running Windows, Linux, or macOS. These devices share a common architecture, use standardized operating systems, receive regular security updates, and are managed by IT departments with established security practices. Defending them is difficult, but at least the playbook is relatively mature.
+
+The attack surface of 2025 looks nothing like this. Today's network includes smartphones and tablets running custom mobile operating systems, billions of IoT devices running embedded firmware that may never receive a security update, industrial control systems managing power grids and water treatment plants, medical devices that administer medication and monitor vital signs, containerized microservices that spin up and down in milliseconds, and virtual machines sharing physical hardware with other organizations' workloads.
+
+Each category of "specialized system" brings its own distinct threat model, its own attack techniques, its own toolset, and its own defensive challenges. A penetration tester who only knows how to attack traditional servers is only equipped to assess a shrinking fraction of the modern attack surface. Module 7.2 addresses the rest.
+
+### Why Specialized Systems Are Harder to Secure
+
+Three factors make specialized systems systematically more difficult to secure than traditional computers:
+
+**Resource constraints:** Many specialized systems — embedded sensors, IoT devices, smartcards, RFID tags — have severely limited processing power, memory, and energy budgets. Strong cryptographic algorithms and full TLS implementations require computational resources these devices cannot provide. Designers make trade-offs, accepting weaker security to maintain functionality within hardware constraints. An attacker targeting these devices faces no such constraints.
+
+**Update challenges:** Traditional computers have automated patch management systems. A smartphone receives over-the-air updates from Apple or Google. An IoT thermostat, industrial sensor, or medical device may run firmware that is physically difficult or impossible to update in the field, requires regulatory recertification for each firmware change, depends on vendor support that may no longer exist, or runs on hardware so old that modern security patches cannot be compiled for it. Vulnerabilities discovered years after deployment remain permanently present.
+
+**Operational constraints:** Specialized systems are often in always-on roles where rebooting for a security patch is genuinely dangerous. A hospital cannot take a medical device offline during surgery to apply a patch. A power plant cannot reboot its control systems during peak demand. A factory cannot halt production. These operational realities are exploited by attackers who know that even discovered vulnerabilities may never be patched in critical systems.
+
+---
+
+## 7.2.2 Attacking Mobile Devices
+
+### The Mobile Threat Landscape
+
+Mobile devices have become the primary computing platform for most humans — more internet traffic now originates from mobile devices than from desktop computers. Corporate email, cloud storage access, authentication apps, VPN clients, and enterprise productivity tools all run on personal smartphones that employees carry everywhere, connect to arbitrary Wi-Fi networks, and install personal apps alongside corporate ones.
+
+From a security perspective, mobile devices present a complex threat model: they are powerful general-purpose computers with access to highly sensitive data (emails, documents, authentication credentials, location history, contacts, photos) yet are frequently treated with far less security rigor than corporate laptops. They are lost and stolen at much higher rates, they connect to untrusted networks constantly, and they blur the boundary between personal and corporate use in ways that complicate security controls.
+
+### Mobile Operating System Architecture: Android vs. iOS
+
+Understanding the security architecture of both major mobile platforms is essential before examining how they are attacked.
+
+**Android Architecture and Security Model:**
+
+Android is built on a modified Linux kernel and uses a permission-based security model where each application runs in its own process with its own user ID (UID) — a Unix-style isolation mechanism where each app is effectively its own system user. Applications are isolated from each other by the Linux kernel's process separation and cannot access each other's data without explicit permission grants.
+
+The Android application sandbox works as follows: each app is assigned a unique UID at installation. The filesystem permissions restrict each app to its own data directory. Inter-process communication (IPC) between apps must use explicitly defined interfaces (Intents, ContentProviders, AIDL services) that the providing app exposes. This prevents arbitrary access between apps — in theory.
+
+Android's permission model requires apps to declare their required permissions in the AndroidManifest.xml file, which users see during installation (or during first use for dangerous permissions in modern Android). The critical weakness historically was "permission creep" — apps requesting far more permissions than they actually need, and users granting them without careful consideration.
+
+**Android's Open Ecosystem Risk:** Android's openness — allowing sideloading of apps from outside the Play Store — dramatically increases malware risk. Malicious apps can be distributed through third-party app stores, phishing links, or bundled with cracked versions of legitimate paid apps. When a user installs a sideloaded APK, they bypass Google Play's malware scanning entirely. This vector is responsible for the vast majority of Android malware infections.
+
+**iOS Architecture and Security Model:**
+
+iOS uses a different security philosophy: a much more locked-down architecture where the App Store serves as the primary (and on unmodified devices, only) app installation channel. Apple reviews every submitted app for malware and policy violations before allowing it on the store — providing a significant security benefit compared to Android's open ecosystem.
+
+iOS uses a hardware-enforced security architecture: the Secure Enclave (a separate coprocessor physically isolated from the main application processor) stores cryptographic keys and handles biometric authentication data. Keys stored in the Secure Enclave cannot be extracted even with full root access to the main processor — they can only be used for operations while remaining inside the Secure Enclave.
+
+The iOS application sandbox is stricter than Android's: apps can communicate with each other only through very limited, explicitly defined sharing mechanisms. Background processing is heavily restricted. Location, contacts, camera, microphone access requires explicit user approval. The entitlements system restricts what APIs each app can access based on Apple's approval.
+
+### Reverse Engineering Mobile Applications
+
+Reverse engineering mobile applications is the practice of analyzing compiled application code to understand its functionality, identify vulnerabilities, recover algorithms, and extract sensitive information (API keys, cryptographic keys, authentication logic).
+
+**Android Reverse Engineering:**
+
+Android applications are distributed as APK (Android Package) files — actually ZIP archives containing compiled Dalvik bytecode (.dex files), resources, and the manifest. The Dalvik bytecode can be decompiled back to human-readable Java (or Kotlin) source code with relatively high fidelity using tools like jadx, Apktool, and dex2jar.
+
+The reverse engineering process: extract the APK (`adb pull /data/app/com.target.app/base.apk`), decompile the DEX files to Java (`jadx -d output_dir base.apk`), analyze the reconstructed source code for hardcoded credentials, insecure API calls, business logic vulnerabilities, and cryptographic weaknesses.
+
+What can be found through Android reverse engineering: hardcoded API keys and credentials embedded in the source code (extremely common — a 2020 study found hardcoded secrets in over 45% of analyzed Android apps), encryption keys and initialization vectors, proprietary business logic and algorithms, backend API endpoint URLs (including non-documented internal APIs), authentication bypass logic, debug features and backdoors left in release builds.
+
+**The Smali layer:** Apktool decompiles DEX files to Smali — a low-level assembly representation of Dalvik bytecode. Smali can be modified and recompiled to patch the application: remove certificate pinning, bypass license checks, add logging, or inject malicious functionality. An attacker who modifies an app and redistribution it is creating a "trojanized" version — a legitimate-looking app with malicious additions.
+
+**iOS Reverse Engineering:**
+
+iOS apps are significantly harder to reverse engineer because iOS applications are compiled to native ARM machine code (not interpreted bytecode like Android's DEX) and are distributed only through the App Store as encrypted IPA files. The encryption prevents direct static analysis — the binary must first be decrypted, which requires running it on a jailbroken device and dumping the decrypted code from memory.
+
+Tools: Hopper Disassembler and IDA Pro for disassembly of decrypted iOS binaries, Frida for dynamic instrumentation (hooking function calls and modifying behavior at runtime without static code modification), class-dump for extracting Objective-C class headers from binaries.
+
+**What makes iOS reverse engineering harder:** Compiled ARM machine code is far less human-readable than decompiled Java; Swift code (now common in modern iOS apps) compiles to native code with fewer metadata artifacts than Objective-C; the decryption step requires a jailbroken device and leaves a clear forensic trail; Apple's mandatory code signing means modified apps cannot be installed without either a developer certificate or a jailbreak.
+
+### Sandbox Analysis and Bypass
+
+Mobile application sandboxes are designed to restrict what an app can do — preventing it from accessing other apps' data, calling unauthorized APIs, or escalating its permissions. Sandbox analysis (also called dynamic analysis) involves running an application in a controlled environment to observe its actual behavior: network requests, file system access, inter-process communications, and permission usage.
+
+**Android Sandbox Analysis:**
+
+Tools like MobSF (Mobile Security Framework) in dynamic mode, Frida-based instrumentation frameworks, and custom Android instrumented environments with network interception proxies reveal what an app actually does at runtime as opposed to what its code appears to do. Network traffic interception (routing the device's traffic through Burp Suite) reveals the API endpoints the app communicates with, the data it sends, and the authentication mechanisms it uses.
+
+**Sandbox escape/bypass:** Some Android malware specifically detects when it is running in an emulated or instrumented environment and behaves innocuously, only revealing its malicious behavior on real devices without instrumentation. Detection techniques include checking for emulator-specific build properties (Build.FINGERPRINT containing "generic", specific device IDs associated with common emulators), checking CPU instruction timing (emulators often run differently from real hardware), and checking for specific files or processes associated with analysis tools.
+
+Security researchers counter these detection techniques by using real physical devices with instrumentation, patching the app's emulator detection code (via Smali modification or Frida hooks), and using increasingly realistic emulated environments.
+
+### Certificate Pinning and Its Bypass
+
+HTTPS traffic between mobile apps and their backends is protected by TLS. But for a security researcher (or attacker) who has configured a proxy like Burp Suite, intercepting this traffic normally requires installing the proxy's CA certificate as a trusted certificate authority on the device. Modern mobile apps implement certificate pinning — hardcoding the expected server certificate or its public key directly in the app, refusing connections where the certificate does not match the pinned value.
+
+This prevents simple MITM interception: even if you install a custom CA certificate, the app refuses the connection because the certificate doesn't match its pinned value.
+
+**Certificate pinning bypass techniques:**
+
+Frida-based pinning bypass: Frida is a dynamic code instrumentation toolkit that injects JavaScript into running processes, allowing live hooking of function calls. The `frida-codeshare.com/arnaudsoullie/frida-multiple-unpinner` script hooks the common certificate pinning methods across multiple frameworks (OkHttp, TrustManager, SSLPinningMode, etc.) and replaces them with versions that always return "pinning satisfied." `frida -U -n com.target.app -s universal_ssl_unpinner.js` — this runs on a connected device and patches the pinning at runtime without modifying the app binary.
+
+Objection is built on Frida and provides a higher-level interface: `objection -g com.target.app explore` starts an Objection shell against the running app. `android sslpinning disable` automatically patches all detected certificate pinning implementations. `ios sslpinning disable` does the same for iOS.
+
+Smali patching: for static bypass, find the certificate pinning code in the decompiled Smali, modify it to always return true (pinning satisfied), recompile, and install the modified APK.
+
+**From the attacker's perspective:** Certificate pinning bypass is an essential step in attacking mobile app backends. Once pinning is bypassed, all API traffic is visible and modifiable through Burp Suite, allowing identification of insecure API endpoints, business logic flaws, IDOR vulnerabilities, and authentication weaknesses that are invisible from a web browser.
+
+**From the defender's perspective:** Certificate pinning does meaningfully raise the bar for MITM attacks, especially for casual attackers. The bypass techniques require a jailbroken/rooted device or physical device access with Frida, which is not trivial in targeted scenarios. Pinning should be implemented using Android's Network Security Configuration (XML-based approach that is harder to bypass than code-based implementations) and should include backup pins for certificate rotation.
+
+### Common Mobile Vulnerabilities — The OWASP Mobile Top 10
+
+The OWASP Mobile Security Project maintains the Mobile Top 10 — a list of the most critical mobile application security vulnerabilities.
+
+**Insecure Data Storage:** Applications storing sensitive data in insecure locations on the device: SQLite databases without encryption accessible to other apps on rooted/jailbroken devices, SharedPreferences files stored in plaintext, external storage (SD card) accessible to all apps, logs that capture sensitive API responses, and backup copies (Android's adb backup feature can extract app data if backup is enabled and the device is USB-accessible).
+
+**How attackers exploit insecure storage:** On a rooted Android device or jailbroken iOS device, an attacker with physical access or malware running as root can access any app's data directory. More practically, malware with the READ_EXTERNAL_STORAGE permission can read any file written to external storage. Database files can be extracted via adb if USB debugging is enabled (a common developer practice left enabled on production devices). Applications like adb backup can export entire app data directories without root.
+
+**Passcode and Biometric Vulnerabilities:** iOS and Android both implement local authentication (biometric or PIN) as an additional layer of access control for sensitive applications. Weaknesses arise when apps implement local authentication incorrectly: checking authentication state in memory that can be patched by Frida, using biometric authentication incorrectly such that any registered fingerprint on the device (not just the user's) can authenticate, or failing to bind cryptographic keys to the biometric result (so Frida can simply patch the authentication check without needing to bypass biometrics).
+
+**Root/Jailbreak Detection and Its Evasion:** Security-sensitive apps (banking, healthcare, enterprise) typically detect whether the device is rooted (Android) or jailbroken (iOS) and refuse to run or disable sensitive features if root access is detected. Root detection checks typically include: checking for the presence of specific files (`/system/app/Superuser.apk`, `/usr/sbin/su`, `/data/local/tmp/su`), checking whether the `su` binary responds to execution attempts, checking for Cydia (the jailbreak app store) on iOS, checking for write access to /system partition.
+
+Bypass techniques: Frida hooks the detection methods and patches them to return "not rooted." Magisk Hide (Android) conceals root access from specific apps that are added to the hide list. RootCloak is an Xposed module (a framework for patching Android behavior system-wide) specifically for hiding root from detection. On iOS, tools like Liberty Lite hide jailbreak artifacts from specific apps.
+
+**The defender's perspective on root/jailbreak detection:** It is a useful additional layer but not a definitive security control — it raises the bar but does not eliminate the risk. The real defense is ensuring that even on a rooted device, the app's sensitive data cannot be accessed because it is properly encrypted with keys bound to the Secure Enclave (iOS) or the TEE (Trusted Execution Environment, Android's equivalent). Root/jailbreak detection combined with proper cryptographic key protection is far stronger than either alone.
+
+**Business Logic Vulnerabilities:** These are perhaps the most impactful mobile vulnerabilities because they are completely invisible to automated scanners and require human understanding of the application's intended functionality. They include: being able to purchase items at incorrect prices by manipulating request parameters, bypassing content restrictions by modifying purchase state in local storage, transferring negative amounts of currency to other users (effectively stealing), exploiting race conditions in payment processing, and accessing premium features by manipulating the API response that grants feature access.
+
+---
+
+## 7.2.3 Practice — Mobile Device Vulnerabilities
+
+### Static Analysis Workflow with MobSF
+
+MobSF (Mobile Security Framework) is an automated, all-in-one mobile security analysis tool that performs both static analysis (without running the app) and dynamic analysis (running the app in an instrumented environment).
+
+**Installation and startup:** MobSF runs as a Django web application: `docker run -it --rm -p 8000:8000 opensecurity/mobile-security-framework-mobsf:latest`. Access the web interface at `http://localhost:8000`, upload the APK or IPA file, and MobSF automatically performs comprehensive analysis.
+
+**Static analysis output for Android APK includes:** AndroidManifest.xml analysis (all declared permissions, exported activities, services, broadcast receivers, and content providers — exported components without permission protection are directly accessible to other apps and can be a significant attack surface), certificate information, hardcoded secrets (API keys, URLs, credentials found by pattern matching in the decompiled code), code analysis (uses of weak cryptographic algorithms like MD5 or DES, insecure random number generation, improper use of WebView including JavaScript interface exposure, SQL query construction without parameterization indicating SQL injection risk), and network security configuration analysis.
+
+**The exported component attack surface:** In Android, any activity, service, content provider, or broadcast receiver declared as `exported="true"` in the manifest is accessible to other apps. A poorly secured exported content provider can leak all of its data to any installed app that queries it. An exported activity without permission protection can be launched by any app. MobSF highlights all exported components, which are frequently high-value attack targets in Android app security testing.
+
+### Dynamic Analysis with Frida
+
+Frida's value lies in being able to observe and modify a running application's behavior without modifying its code permanently. The Frida server runs on the device (requires root on Android, jailbreak on iOS), and the Frida client on the attacker machine connects to it and injects JavaScript into the target process.
+
+**Basic Frida usage:** `frida -U -n com.target.app` opens an interactive session in the running app process. `frida -U -n com.target.app -l script.js` injects a script into the running process. `frida-trace -U -n com.target.app -i "strcmp"` traces all calls to `strcmp` in the running process, useful for finding hardcoded string comparisons in authentication logic.
+
+**Hooking a function with Frida:**
+```javascript
+// Hook the Java method used for certificate validation
+Java.perform(function() {
+  var TrustManager = Java.use('com.target.app.SomeTrustManager');
+  TrustManager.checkServerTrusted.implementation = function(chain, authType) {
+    console.log('[*] checkServerTrusted called - bypassing');
+    return; // Do nothing, accept all certificates
+  };
+});
+```
+
+This script hooks the `checkServerTrusted` method of the app's custom TrustManager and replaces its implementation with one that accepts all certificates — bypassing certificate validation entirely.
+
+---
+
+## 7.2.4 Practice — Attacking Mobile Devices
+
+### Drozer for Android Attack Surface Assessment
+
+Drozer is an Android security assessment framework that allows interaction with the inter-process communication (IPC) mechanisms of Android apps — testing exported components and Android's application sandbox from within the device.
+
+**Setup:** Install the Drozer agent APK on the target device, connect via USB with USB debugging enabled, set up port forwarding (`adb forward tcp:31415 tcp:31415`), and connect the Drozer console (`drozer console connect`).
+
+**Key Drozer commands:**
+
+Listing attack surface: `run app.package.attacksurface com.target.app` — this immediately shows all exported activities, services, broadcast receivers, and content providers, and flags whether they require permissions. Zero-permission exported components are immediately accessible attack surface.
+
+Querying a content provider without credentials: `run app.provider.query content://com.target.app.provider/users` — if this returns user data without authentication, the content provider is unauthenticated and leaks data to any installed app.
+
+Attempting to start an exported activity that should be protected: `run app.activity.start --component com.target.app com.target.app.AdminActivity` — if the admin activity launches, it is accessible without the authentication that the normal login flow would require.
+
+**Real attack scenario — ContentProvider path traversal:** Some file-sharing content providers have path traversal vulnerabilities: `run scanner.provider.traversal -a com.target.app` tests whether the provider allows access to files outside its intended directory. A successful traversal can read arbitrary files from the app's data directory.
+
+### APK Manipulation and Repackaging
+
+APK Studio and APK Studio provide GUI environments for decompiling, modifying, and recompiling Android APKs. The workflow:
+
+Decompile with Apktool: `apktool d target.apk -o output/` — this produces Smali code (low-level bytecode representation), resources, and the manifest in a directory structure that can be modified and recompiled.
+
+Identify the target code: search the Smali for the functionality to modify, such as the license check (`grep -r "isPremium\|isLicensed\|checkLicense" output/`) or the root detection check (`grep -r "isRooted\|detectRoot\|SU" output/`).
+
+Modify the Smali: change the conditional branch in the license check so it always returns true, or remove the root detection calls entirely.
+
+Recompile: `apktool b output/ -o modified.apk`
+
+Sign: `keytool -genkey -v -keystore test.keystore -alias test -keyalg RSA` then `jarsigner -keystore test.keystore modified.apk test`
+
+Install: `adb install modified.apk`
+
+The resulting app has the same functionality as the original but with the security checks bypassed. For a security researcher, this proves that the security control can be circumvented. For a malicious actor, this enables redistribution of cracked apps.
+
+---
+
+## 7.2.5 Attacking Internet of Things (IoT) Devices
+
+### Defining IoT and Its Security Challenge
+
+The Internet of Things encompasses every networked device that is not a traditional general-purpose computer. The range is staggering: consumer devices (smart speakers, smart TVs, connected thermostats, baby monitors, door locks, washing machines, cars), industrial devices (SCADA sensors, manufacturing controllers, energy meters, building management systems), medical devices (insulin pumps, pacemaker remote monitors, IV pumps, patient monitoring systems), and infrastructure devices (smart grid sensors, water treatment controllers, traffic management systems).
+
+What unites this diverse category from a security perspective is the shared characteristic that these devices are designed for a specific function, have constrained resources, are expected to operate for years or decades, receive minimal security attention from their manufacturers, and are increasingly connected to networks and the internet.
+
+### The Fundamental Security Architecture of IoT Devices
+
+Understanding how IoT devices are built at the firmware level is the foundation for attacking them.
+
+**Embedded Linux as the dominant platform:** The vast majority of IoT devices run a stripped-down version of Linux on ARM, MIPS, or x86 processors. The firmware is typically a compressed filesystem image (SquashFS, JFFS2, or similar) containing the Linux kernel, BusyBox (a single binary providing most Unix utilities), configuration files, and the device's application software. This image is stored in flash memory and loaded at boot.
+
+**The Bootloader:** Most IoT devices use U-Boot as their bootloader — the first code that runs when the device powers on. U-Boot initializes hardware, decompresses the kernel from flash, and passes control to the kernel. U-Boot often provides an interactive console accessible via the UART serial interface during the brief window before the kernel loads. If U-Boot's console is accessible and not password-protected, an attacker with physical access can interrupt the boot process, access the bootloader shell, modify kernel parameters (like `init=/bin/sh` to boot directly to a root shell), and dump or modify the filesystem.
+
+**UART — The Hidden Debug Interface:** Universal Asynchronous Receiver Transmitter (UART) is a serial communication standard used internally in virtually every embedded device for debug output and console access. During development, engineers use UART to output boot logs and access the device's command line. These UART connections — typically 4 pins (VCC, GND, TX, RX) — are physically present on the PCB (Printed Circuit Board) of most production devices, even though they are not documented or intended for user access.
+
+Finding UART pins on a PCB: Identify groups of 3-5 through-holes or test points on the board. Use a multimeter to identify GND (the pin showing continuity to the board's ground plane) and VCC (the pin showing 3.3V or 5V). The TX pin will show a digital signal during boot (visible on an oscilloscope). Connect with a USB-to-serial adapter (like a CP2102 or FTDI module) and a terminal emulator (minicom, screen) at the device's baud rate (most commonly 115200). If the device has an unsecured shell, you will see a root prompt or login prompt during boot — often with default credentials or no credentials at all.
+
+**JTAG — Hardware Debugging Interface:** JTAG (Joint Test Action Group) is a hardware debugging standard that provides direct access to the processor's debug capabilities: reading and writing memory, halting execution, single-stepping instructions, setting breakpoints, and extracting flash memory contents. JTAG access bypasses all software-level security controls — it is equivalent to having a pause button and memory inspector for the processor itself.
+
+JTAGulator is a tool that helps identify JTAG pins automatically. OpenOCD (Open On-Chip Debugger) is the primary open-source software for JTAG-based debugging and firmware extraction.
+
+### IoT Attack Methodologies — The Firmware Analysis Approach
+
+The most methodologically rich IoT attack approach involves obtaining the firmware and analyzing it offline before ever touching the physical device.
+
+**Firmware acquisition methods:**
+
+From the manufacturer's website: many manufacturers distribute firmware update files publicly for customers to manually update their devices. These files, if not encrypted, can be directly analyzed.
+
+Via the device's update mechanism: capture the traffic during a firmware update using a MITM proxy. The update file is often downloaded over HTTP (unencrypted) from a vendor's server, making interception trivial.
+
+From flash memory: desolder the flash memory chip from the PCB, read its contents with a flash programmer (like a CH341 programmer), and analyze the raw binary.
+
+Via UART/JTAG: with physical access, obtain a root shell via UART and use `dd` to read the raw flash device (`dd if=/dev/mtd0 of=/tmp/firmware.bin`), then exfiltrate over the network.
+
+**Firmware analysis:**
+
+`binwalk -e firmware.bin` — automatically identifies and extracts recognized file signatures (filesystem images, compressed archives, cryptographic certificates, kernel images) from the binary. For a typical IoT firmware, this will extract the squashfs root filesystem.
+
+After extraction, `find . -name "*.conf" -o -name "*.json" -o -name "*.cgi"` locates configuration files and web interface scripts. `grep -r "password\|passphrase\|secret\|key" .` searches for hardcoded credentials. `grep -r "admin\|root\|pass" ./etc/shadow` reads password hashes. `strings firmware.bin | grep -i password` finds readable strings in the binary.
+
+**Hardcoded credentials — the epidemic:** The Mirai botnet's success was built entirely on a list of 61 hardcoded credentials that were factory defaults in cameras, DVRs, and routers. These are not passwords users set — they are credentials compiled into the firmware by the manufacturer, often never changed by end users because they are not documented, not displayed during setup, or not changeable through the web interface. Firmware analysis almost always finds hardcoded accounts.
+
+**Web interface vulnerabilities in IoT devices:** Most consumer and many enterprise IoT devices have a web-based management interface. These interfaces are typically written in C or shell scripts running through a CGI (Common Gateway Interface) or custom web server, often with minimal attention to web application security. Common vulnerabilities found through firmware analysis and web interface testing: command injection in form fields that pass user input to shell commands, authentication bypass through cookie manipulation or URL parameter manipulation, cross-site request forgery (CSRF) in management actions, reflected and stored XSS in device name and network configuration fields, path traversal in file serving functions, and buffer overflows in embedded web server implementations.
+
+---
+
+## 7.2.6 Analyzing IoT Protocols
+
+### The Landscape of IoT Communication Protocols
+
+IoT devices do not use a single communication standard — the ecosystem is fragmented across dozens of protocols, each optimized for different trade-offs between range, bandwidth, power consumption, and cost. Understanding these protocols is essential because each has distinct security characteristics and attack vectors.
+
+### MQTT — Message Queuing Telemetry Transport
+
+MQTT is arguably the most widely deployed IoT application protocol, used in industrial sensors, home automation, telematics, and monitoring applications. It is a publish/subscribe messaging protocol designed for constrained devices and unreliable networks, running over TCP (default port 1883 for unencrypted, 8883 for TLS-encrypted).
+
+**Architecture:** MQTT uses a broker model. Devices (clients) publish messages to topics (hierarchical strings like `home/livingroom/temperature`). Other devices that have subscribed to those topics receive the messages via the broker. The broker (common implementations: Mosquitto, HiveMQ, EMQX) handles routing.
+
+**Security issues:**
+
+No authentication by default: MQTT brokers run without authentication by default. Any client can connect to an unauthenticated broker and subscribe to all topics with the wildcard `#` — receiving every message published to every topic on the broker. In many deployments, this means temperature sensor readings, door lock states, security camera motion alerts, and industrial sensor data are all accessible to anyone who can reach the broker's IP and port.
+
+No encryption by default: unencrypted MQTT (port 1883) transmits all messages in plaintext. A network-level eavesdropper can capture all sensor data and commands flowing through the broker.
+
+**Attacking MQTT:** `mosquitto_sub -h broker_ip -t '#'` subscribes to all topics on a Mosquitto broker that allows anonymous access. This single command delivers every message published to the broker in real time — complete visibility into the IoT system's state. `mosquitto_pub -h broker_ip -t 'home/lock/command' -m 'unlock'` publishes an attacker-controlled message to a smart lock's command topic — potentially unlocking the door if the lock subscribes to that topic for commands without additional authentication.
+
+**IoT security framework finding:** Shodan indexes exposed MQTT brokers: `shodan search "port:1883 MQTT"` returns thousands of internet-accessible MQTT brokers, many of which allow anonymous connections.
+
+**Defense:** Enable MQTT broker authentication (username/password for each client), use TLS on port 8883 for all connections, restrict which topics each client can publish or subscribe to using ACLs (Access Control Lists), and keep the broker behind a firewall — not accessible from the internet unless specifically required.
+
+### CoAP — Constrained Application Protocol
+
+CoAP is an HTTP-like protocol designed specifically for constrained nodes and networks — devices with as little as 10 kB of RAM and 100 kB of code space. It runs over UDP (default port 5683) rather than TCP, making it lightweight at the cost of reliability. CoAP supports a RESTful model (GET, POST, PUT, DELETE) similar to HTTP.
+
+**Security issues:** CoAP over UDP without DTLS (the UDP equivalent of TLS) is inherently insecure. CoAP supports NoSec mode (no security at all), PreSharedKey mode (symmetric PSK), RawPublicKey mode (asymmetric keys without PKI), and Certificate mode (full PKI). In practice, many deployments use NoSec mode for simplicity, providing no authentication or encryption.
+
+CoAP's UDP nature makes it susceptible to amplification attacks — a small CoAP request can elicit a larger response, making accessible CoAP servers useful for DDoS amplification.
+
+### Zigbee and Z-Wave — Mesh Network Protocols
+
+Zigbee (IEEE 802.15.4 based) and Z-Wave are low-power mesh networking protocols used in smart home automation: light bulbs, door locks, sensors, switches. They operate at 2.4 GHz (Zigbee) and 868/915 MHz (Z-Wave) and use encrypted communications.
+
+**Zigbee security issues:** Zigbee supports symmetric key encryption (AES-128). The security depends heavily on how the network key is distributed during device joining. If a device is joined to the network in an insecure mode (using a default "well-known" key like 0x5A6967426565416C6C69616E636530 during joining), an attacker who captures the joining process can recover the network key and decrypt all subsequent Zigbee traffic.
+
+Replay attacks are possible if devices do not implement proper frame counter validation. Zigbee devices have historically lacked input validation, making command injection possible once the network key is known.
+
+**Tools for Zigbee analysis:** Ubertooth One with appropriate firmware can capture Zigbee traffic. ATMEL RZUSBstick supports Zigbee packet capture in Wireshark. Killerbee is a Python framework for attacking Zigbee networks: `zbdump -f 15 -w capture.pcap` captures traffic on channel 15. `zbfind` discovers Zigbee networks. `zbreplay` replays captured frames (replay attack).
+
+### LoRa and LoRaWAN — Long Range Wide Area Networks
+
+LoRa (Long Range) is a physical radio modulation technique, and LoRaWAN is the network protocol built on it. Designed for sending small amounts of data (uplink payload typically under 50 bytes) over very long distances (2-5 km urban, up to 30 km rural) with very low power consumption. Used in agricultural sensors, smart city infrastructure, utility metering, asset tracking.
+
+**Security architecture:** LoRaWAN uses two layers of AES-128 encryption. The network session key (NwkSKey) handles MAC layer security. The application session key (AppSKey) encrypts the application payload end-to-end between the device and the application server.
+
+**Known vulnerabilities:** LoRaWAN's over-the-air activation (OTAA) process, if an attacker captures a join request and the join response, and if the network uses a predictable AppKey, the session keys can be derived. Bit-flipping attacks against improperly authenticated payloads allow modification of data in transit without detection. Replay attacks on confirmed messages can cause disruption if frame counters are not properly validated.
+
+**Practical impact:** A compromised LoRaWAN smart meter can report false readings, preventing detection of electricity theft. A compromised agricultural sensor can report false crop conditions, causing incorrect irrigation decisions.
+
+### Industrial Protocols — Modbus, DNP3, PROFINET
+
+In industrial environments, specialized protocols manage the communication between sensors, actuators, PLCs (Programmable Logic Controllers), and SCADA (Supervisory Control and Data Acquisition) systems. These protocols were designed in an era before networked security was a concern — they assumed all communicating parties were trusted.
+
+**Modbus:** The oldest and simplest industrial protocol (1979), still widely deployed. Runs over TCP (Modbus TCP, port 502) or serial (Modbus RTU). Absolutely no authentication or encryption in the original specification. Any device that can reach a Modbus server on port 502 can read sensor values and write control values — potentially controlling physical processes.
+
+Shodan search for internet-accessible Modbus devices: `shodan search "port:502 Modbus"`. `mbtget -r1 -n10 <target>` reads 10 registers from a Modbus device (Modbus client utility). pyModbus allows writing control values: sending a specific Modbus write command to a water treatment facility's pump controller could, theoretically, stop or overspeed the pump.
+
+**DNP3:** Developed for SCADA communications in utilities (power, water). Slightly more sophisticated than Modbus but the base specification also lacks authentication. DNP3 Secure Authentication (SA) v5 adds cryptographic authentication but is not universally deployed. Wireshark dissects DNP3 natively, making traffic analysis straightforward.
+
+---
+
+## 7.2.7 Practice — Analyzing IoT Protocols
+
+### MQTT Traffic Analysis and Attack Simulation
+
+In an authorized IoT security assessment of a smart building management system, the following workflow demonstrates comprehensive MQTT analysis:
+
+**Discovery:** Nmap scan of the target network for MQTT brokers: `nmap -sV -p 1883,8883 <network_range>`. Any host with port 1883 open is a potentially unauthenticated MQTT broker.
+
+**Anonymous connection test:** `mosquitto_sub -h <broker_ip> -t '#' -v` — the `-v` flag shows both topic and message. If this connects without credentials and begins showing messages, the broker is openly accessible. Document every topic name and message format.
+
+**Understanding the system through topics:** A well-designed IoT system reveals its entire architecture through its MQTT topic hierarchy. Topics like `building/floor3/hvac/temperature`, `building/floor3/hvac/setpoint`, `security/door/main-entrance/state`, `security/alarm/zone1/trigger` reveal the system's structure. Subscribing to all topics shows which devices publish what data at what frequency.
+
+**Injection test:** After understanding the topic structure, test whether publish operations are possible: `mosquitto_pub -h <broker_ip> -t 'security/door/main-entrance/command' -m '{"action":"unlock"}'`. Document whether the door lock responds — if it does, the MQTT command interface is unauthenticated and any message to this topic can control physical access.
+
+### Firmware Analysis Lab
+
+In a lab environment using intentionally vulnerable firmware images (available from VulnHub and similar resources):
+
+`binwalk -e firmware_image.bin` extracts the filesystem. Navigate to `./squashfs-root/etc/` and examine `shadow` for password hashes, `passwd` for user accounts. The `shadow` file will typically show something like `root:$1$salt$hash:` — the MD5crypt hash is crackable with John the Ripper: `john --wordlist=/usr/share/wordlists/rockyou.txt shadow`. 
+
+Default credentials found during firmware analysis should be tested against the running device's web interface, SSH/Telnet access, and any other exposed services.
+
+---
+
+## 7.2.8 IoT Security Special Considerations
+
+### The Update Problem — Lifecycle Vulnerabilities
+
+IoT security fundamentally breaks down over time due to the update problem. A device that is secure at release becomes progressively less secure as vulnerabilities are discovered and patches are not applied.
+
+**Why IoT devices don't get patched:**
+
+Manufacturer economics: consumer IoT devices are sold at thin margins with the expectation that the revenue stream ends at purchase. Providing years of security updates is costly and the manufacturer recaptures none of that cost. Many manufacturers simply do not provide updates beyond the first year or two after product launch.
+
+Device lifetime mismatches: industrial IoT devices are expected to operate for 10-20 years. The vendor's software support cycle may be 5 years. The device will spend the majority of its operational lifetime running unpatched software.
+
+Operational constraints: you cannot patch a glucose monitor while a diabetic patient is depending on it for continuous monitoring. You cannot patch a power substation automation device during peak demand. Maintenance windows may be months apart.
+
+Certification requirements: medical devices and safety-critical systems require regulatory re-certification (FDA approval, IEC 62443 certification, etc.) for firmware changes. A vendor may technically be able to create a patch but cannot deploy it without going through a lengthy and expensive certification process.
+
+Physical access requirements: some IoT devices require physical access for firmware updates and are deployed in inaccessible locations — underground infrastructure, remote industrial sites, inside sealed enclosures. Update capability was simply not designed in.
+
+**The security professional's responsibility:** When conducting IoT security assessments, the update situation must be assessed and documented. For each discovered vulnerability, the report must address: does the vendor provide patches? Is the patch installable without physical access? Does applying the patch require operational downtime? Has the device reached end of life? For devices where patching is impossible, compensating controls (network segmentation, monitoring) must be recommended as the realistic defensive posture.
+
+### Physical Security — The Unique IoT Threat
+
+Unlike servers locked in data centers, IoT devices are frequently physically accessible to attackers. A smart meter is on the outside of a building. A traffic sensor is on a pole. A building access control reader is mounted in a public corridor. A smart lock is on a door.
+
+Physical access to an IoT device opens attack vectors completely unavailable for traditional computers: UART access for root shell, JTAG access for firmware extraction and modification, direct flash chip reading, hardware implantation (adding malicious components), power analysis to extract cryptographic keys, and fault injection to bypass security checks.
+
+**Case study — Smart Meter Physical Attack:** Smart meters have been demonstrated vulnerable to physical tampering that manipulates their power consumption readings, effectively stealing electricity. The attack requires physical access to the meter (common for homeowners or technical workers), a small hardware implant or firmware modification, and results in persistent utility fraud. Utilities have deployed optical tamper detection and cryptographic billing authentication to counter this, but deployment is uneven.
+
+### Supply Chain Attacks on IoT
+
+The complex global supply chain for IoT hardware components (processors, radios, sensors from various manufacturers assembled by contract manufacturers) creates opportunities for supply chain compromise: malicious hardware components with hidden capabilities, backdoors introduced during manufacturing, counterfeit components that fail to implement security features, and compromised firmware introduced before the device reaches the end customer.
+
+The 2018 Bloomberg Businessweek report (whose accuracy was disputed) alleged that Chinese intelligence had inserted malicious chips into server motherboards manufactured by Supermicro — illustrating the supply chain threat even if the specific claim remains contested. Regardless, the threat model is real and documented in other contexts.
+
+---
+
+## 7.2.9 Common IoT Vulnerabilities
+
+### The OWASP IoT Top 10
+
+The OWASP IoT Project maintains the IoT Top 10 — the most critical vulnerability categories in IoT devices. Understanding these provides a systematic framework for IoT security assessment.
+
+**Weak, Guessable, or Hardcoded Passwords:** The most exploited IoT vulnerability category. Includes factory default credentials (admin/admin, admin/password, root/root) that are common across all devices of the same model and never changed; hardcoded backdoor accounts compiled into firmware for technical support purposes that cannot be changed by users; and passwords printed on device labels that never change. The Mirai botnet used 61 credential pairs to compromise 600,000+ devices — demonstrating that hardcoded credentials at this scale have global consequences.
+
+**Insecure Network Services:** Unnecessary services running on IoT devices expose attack surface. Common examples: Telnet (port 23) left enabled alongside SSH — provides the same functionality without any encryption; debug-mode web servers running on non-standard ports that expose internal APIs; UPnP (Universal Plug and Play) services that automatically configure port forwarding on routers without user interaction — allowing internet access to services that should be local only; SNMP with default community strings; and unauthenticated management APIs.
+
+**Insecure Ecosystem Interfaces:** IoT devices communicate with cloud backends, mobile apps, and web interfaces. Vulnerabilities in these interfaces — SQL injection in the web dashboard, weak API authentication, IDOR in the mobile app, unencrypted cloud data storage — affect the security of the entire ecosystem even if the device firmware itself is secure.
+
+**Lack of Secure Update Mechanism:** Update mechanisms that: download firmware over HTTP (unencrypted, allowing MITM firmware replacement with malicious firmware), do not verify firmware signatures (allowing installation of unsigned/malicious firmware), allow downgrade attacks (installing an older vulnerable firmware version), or do not secure the update channel (no authentication required to push updates) are all critical vulnerabilities.
+
+**Use of Insecure or Outdated Components:** IoT device firmware typically incorporates numerous open-source components: BusyBox (provides Unix utilities), OpenSSL or a proprietary TLS library, an embedded web server (lighttpd, thttpd, GoAhead), and various protocol libraries. If these components are old versions with known CVEs and the manufacturer has not updated them (common because vendors freeze the software stack at a specific version and never update it), the device is vulnerable to those CVEs permanently.
+
+A typical IoT firmware analysis will find OpenSSL versions from 2014, Linux kernels with publicly known privilege escalation vulnerabilities, and embedded web servers with documented authentication bypass vulnerabilities — all present in devices sold today.
+
+**Insufficient Privacy Protection:** IoT devices collect sensitive data — health metrics, location data, behavioral patterns (when lights turn on/off), voice recordings (smart speakers), and visual data (cameras). This data is frequently: stored in cleartext in the cloud, transmitted to third parties without disclosure, retained indefinitely without purging mechanisms, or accessible to employees of the IoT vendor without strong access controls.
+
+---
+
+## 7.2.10 Practice — Common IoT Vulnerabilities
+
+### Shodan-Based IoT Vulnerability Assessment
+
+Shodan's database is an essential resource for IoT security assessment at scale. For authorized assessments, Shodan searches against the target organization's IP ranges and ASN reveal what IoT services are internet-accessible.
+
+`shodan search "org:target-org"` lists all indexed hosts. `shodan search "org:target-org port:23"` finds Telnet services. `shodan search "org:target-org product:Hikvision"` finds Hikvision cameras (a specific brand with numerous documented CVEs). `shodan search "org:target-org default password"` is a meta-search that Shodan itself pre-processes to find devices with identified default credentials.
+
+For specific vulnerabilities, Shodan's CVE search is powerful: `shodan search "vuln:CVE-2021-36260"` returns all devices Shodan has identified as vulnerable to the Hikvision command injection CVE (over 80,000 results worldwide when this CVE was first added to Shodan).
+
+### Nmap IoT Service Enumeration
+
+`nmap -sV -sC -p 1-65535 --script=banner,telnet-brute,snmp-brute,ftp-brute <iot_device_ip>` performs comprehensive service enumeration with brute-force credential testing on discovered services.
+
+`nmap --script http-default-accounts <iot_device_ip>` specifically tests for default credentials on web management interfaces.
+
+---
+
+## 7.2.11 Data Storage System Vulnerabilities
+
+### The IoT Architecture and Its Data Storage Layers
+
+IoT data flows through multiple storage layers, each with distinct security characteristics. Understanding this full stack is essential for comprehensive IoT security assessment.
+
+**Device-Level Storage (Edge Layer):**
+
+IoT devices store data locally in flash memory. The file systems used (JFFS2, YAFFS2, UBIFS for NAND flash; FAT, ext4 on eMMC) store configuration files, credentials, logs, and cached data. Without full-disk encryption (computationally expensive and infrequently implemented), all locally stored data is accessible to anyone with physical access to the flash memory — either by reading flash chips directly or via UART/JTAG shell access.
+
+What is stored at the device level that attackers target: network credentials (Wi-Fi passwords for home networks where the device is installed), cloud account credentials (API keys for connecting to the backend), device configuration including security settings, local user accounts and credentials, logs that may contain operational data and credential fragments, and cached sensor data.
+
+**The Fog/Edge Layer:**
+
+The "fog" layer refers to intermediate processing nodes between IoT endpoints and the cloud — local gateways, edge servers, protocol translators. These devices aggregate data from multiple IoT sensors and forward it to the cloud, often performing local processing and temporary storage. They run more capable hardware (often ARM SBCs like Raspberry Pi-class devices, or embedded x86 systems) and typically run Linux with more traditional server vulnerabilities.
+
+Security vulnerabilities at the fog layer include: default credentials on gateway web management interfaces, unencrypted storage of aggregated sensor data, insufficient access controls allowing any device in the local network to read gateway data, command injection in protocol translation logic, and outdated software with known CVEs.
+
+**Cloud Storage Layer:**
+
+IoT data ultimately lands in cloud storage — time-series databases, object storage, data lakes. The security of this layer is covered in Module 7.1 (cloud security). Key IoT-specific concerns: appropriate data retention policies (sensor data from years ago may still be in storage with no purging mechanism), access control on historical data (can a user query another user's historical sensor data?), and encryption of data at rest (sensor data in plaintext in a cloud database is accessible to anyone who compromises the database).
+
+### Common Misconfigurations in IoT Data Storage
+
+**Default credentials on database access:** IoT platforms frequently use MongoDB, MySQL, or InfluxDB (time-series) as backend databases. As with MQTT brokers, these databases are often deployed with default credentials or no authentication. Exposed databases have been found containing billions of IoT sensor readings, home network configurations, and user account data.
+
+The Elasticsearch and MongoDB exposure problem at scale: in 2017, 10 terabytes of Verizon customer data was found in an exposed Amazon S3 bucket. Thousands of MongoDB instances exposed without authentication have been found and exploited — automated bots scan for unauthenticated MongoDB, copy the data, delete the originals, and leave a ransom note demanding payment to return the data.
+
+**Insecure Direct Object References in API endpoints:** IoT platforms typically provide APIs for mobile apps to retrieve their device's sensor history: `GET /api/devices/{deviceId}/readings?period=30d`. If `deviceId` is guessable (sequential integer IDs are common) and the API does not verify that the authenticated user owns the requested device, any user can access any other device's sensor history by iterating through device IDs. This is an IDOR vulnerability that gives attackers access to all users' IoT data.
+
+---
+
+## 7.2.12 Management Interface Vulnerabilities
+
+### What Is IPMI and Why It Matters
+
+IPMI (Intelligent Platform Management Interface) is a standardized hardware management interface built into server motherboards that allows remote management of a server independent of the operating system state — useful for out-of-band management when the OS is unresponsive or offline.
+
+The IPMI architecture: the BMC (Baseboard Management Controller) is a separate microcontroller embedded in the server motherboard with its own processor, memory, and network interface. The BMC monitors hardware health (temperatures, fan speeds, voltages), controls power state (remote power on/off/reset), provides a remote console (via IPMI serial-over-LAN or KVM-over-IP), and manages firmware updates.
+
+Critically, the BMC operates independently of the main processor and operating system. When the server is powered off, the BMC remains active as long as power is connected. A compromised BMC provides capabilities equivalent to physical presence at the server: power cycling, BIOS configuration, console access, firmware modification.
+
+**IPMI Security Vulnerabilities:**
+
+The IPMI 2.0 specification has a fundamental cryptographic vulnerability called the RAKP (Remote Authenticated Key-Exchange Protocol) authentication flaw. During the authentication handshake, the server reveals a hash of the password regardless of whether the client provides the correct password. An attacker can capture this hash exchange by sending authentication requests and then crack the password offline using Hashcat: `nmap -sU -p 623 <target>` discovers IPMI services. `ipmitool -I lanplus -H <target> -U admin -P ""` triggers an authentication exchange that can be captured with a network sniffer. The captured hash can be cracked with: `hashcat -m 7300 ipmi_hashes.txt wordlist.txt`.
+
+**IPMI Default Credentials:** IPMI interfaces frequently ship with default credentials: `ADMIN/ADMIN` (SuperMicro), `admin/admin`, `root/calvin` (Dell iDRAC), `admin/password` (HP iLO). These are the credentials for out-of-band hardware management interfaces that provide power control, console access, and firmware modification — the highest-privilege access possible to a physical server.
+
+**The Dell iDRAC, HP iLO, ASUS ASMB Attack Surface:** These proprietary implementations of IPMI (and their associated web interfaces and tools) have each had significant security vulnerabilities beyond the IPMI 2.0 protocol flaw: unauthenticated firmware upload vulnerabilities, authentication bypass, command injection in the web management interface, and remote code execution. The iDRAC 6 had a vulnerability (CVE-2018-1212) allowing arbitrary OS command execution. HP iLO 4 had a critical authentication bypass (CVE-2017-12542). These vulnerabilities against server management interfaces are particularly severe because they provide control independent of the server OS.
+
+### Industrial Control System Management Interfaces
+
+SCADA (Supervisory Control and Data Acquisition) systems and industrial control system management interfaces present similar management interface vulnerability patterns but with physically critical consequences.
+
+**HMI (Human Machine Interface) vulnerabilities:** HMIs are the operator interfaces for industrial systems — the displays and control panels that plant operators use to monitor and control industrial processes. Modern HMIs are often Windows-based PCs running SCADA software (Wonderware, Ignition, FactoryTalk) connected to industrial networks. Common vulnerabilities: Windows HMI systems running outdated, unpatched Windows versions because production system stability is prioritized over security updates; HMI systems on the same flat network as corporate IT, allowing lateral movement from corporate breach to industrial control; web-based HMI interfaces (accessible via browser) that have authentication bypass or SQL injection vulnerabilities; and default credentials on the SCADA software itself.
+
+**OPC UA (Open Platform Communications Unified Architecture):** The modern standard for industrial data exchange. OPC UA includes a security model with authentication and encryption — but implementations vary widely in whether security is configured or simply disabled for simplicity.
+
+---
+
+## 7.2.13 Practice — Management Interface Vulnerabilities
+
+### IPMI Assessment Workflow
+
+In an authorized infrastructure security assessment, IPMI assessment follows these steps:
+
+Discovery: `nmap -sU -p 623 <network_range>` discovers IPMI services on the default port. IPMI is UDP-based, making it less visible to TCP-focused network scanning.
+
+Default credential testing: `ipmitool -I lanplus -H <target> -U ADMIN -P ADMIN chassis status` tests the SuperMicro default credentials. Common credentials to test: ADMIN/ADMIN, admin/admin, root/calvin, root/root, Administrator/Administrator.
+
+RAKP hash capture for offline cracking: use Metasploit module `auxiliary/scanner/ipmi/ipmi_dumphashes`. This module connects to each discovered IPMI interface, captures the RAKP authentication hash, and saves it for offline cracking.
+
+Impact demonstration: with valid IPMI credentials, demonstrate what access provides: `ipmitool -I lanplus -H <target> -U admin -P password power status` (can we check power state?), `ipmitool -I lanplus -H <target> -U admin -P password sol activate` (can we access the server console via Serial-over-LAN?). Document all accessible capabilities without actually exercising destructive ones.
+
+---
+
+## 7.2.14 Exploiting Virtual Machines
+
+### Virtual Machine Architecture — The Foundation
+
+Understanding VM exploitation begins with a clear mental model of the virtualization stack and how isolation is supposed to work.
+
+**The hypervisor layer:** The hypervisor (also called VMM — Virtual Machine Monitor) is the software layer that creates and manages virtual machines. It presents each guest OS with virtual hardware (virtual CPUs, virtual RAM, virtual network interfaces, virtual storage) while sharing the underlying physical hardware between multiple VMs.
+
+**Type 1 (Bare Metal) Hypervisors:** Run directly on the hardware — there is no host OS between the hypervisor and the hardware. The hypervisor itself is the lowest-level software running on the machine. Examples: VMware ESXi, Microsoft Hyper-V (server edition), Xen (used by AWS EC2 for many instance types), KVM (used by many OpenStack deployments). Type 1 hypervisors are used in production environments and cloud infrastructure.
+
+**Type 2 (Hosted) Hypervisors:** Run as an application on top of a conventional host OS. The hypervisor depends on the host OS for hardware access. Examples: VMware Workstation, VMware Fusion, VirtualBox, Parallels Desktop. Type 2 hypervisors are used on developer workstations and for personal use (including security labs).
+
+**The isolation model:** Each VM should be completely isolated from every other VM sharing the same physical host. VM 1's memory should be inaccessible to VM 2. VM 1's disk should be inaccessible to VM 2. VM 1's network traffic should be invisible to VM 2 unless explicitly routed between them. The hypervisor enforces this isolation.
+
+**Hardware virtualization support:** Modern x86 processors include hardware support for virtualization: Intel VT-x (VMX — Virtual Machine Extensions) and AMD-V (SVM — Secure Virtual Machine). These CPU features create a distinct execution mode (VMX non-root operation) in which guest OS code runs directly on the real CPU hardware (not interpreted or emulated) but cannot execute privileged instructions that would affect other VMs or the hypervisor. When a guest attempts a sensitive operation, the CPU generates a VM exit — a trap that transfers control to the hypervisor, which handles the operation safely and resumes the guest. This hardware-enforced isolation is what makes modern virtualization both efficient and secure.
+
+### VM Escape — Breaking Isolation
+
+VM escape is the most severe category of virtualization vulnerability: an attacker who compromises code running inside a VM breaks out of the VM to execute code in the hypervisor context or on the host OS. From the hypervisor or host, the attacker has access to all other VMs on the same physical host, the hypervisor management interface, and the host OS itself.
+
+**Why VM escape is catastrophic in cloud environments:** In a public cloud, you and another organization's workloads may be running on the same physical host (this is multi-tenancy). A VM escape vulnerability exploitable from within a customer VM compromises the cloud provider's hypervisor and, potentially, all other customer VMs on that host. This would be an existential security event for a cloud provider.
+
+**Historical VM escape vulnerabilities:**
+
+VENOM (CVE-2015-3456) — Virtual Environment Neglected Operations Manipulation: A vulnerability in the virtual floppy disk controller (FDC) implementation in QEMU, the open-source emulation layer used by many hypervisors (KVM, Xen, VirtualBox). The floppy disk controller in QEMU had a buffer overflow in its command processing code. An attacker with access to the guest OS could issue specially crafted floppy disk controller commands that overflowed a buffer in the QEMU process running on the host, gaining code execution in the QEMU process — which runs as the host OS's user. From the QEMU process, the attacker had host OS access and could access other VMs' disk images, memory, and network interfaces. VENOM affected virtually all hypervisors using QEMU for legacy device emulation and required urgent patching across the entire cloud infrastructure industry.
+
+Cloudburst (VMware, 2009): A vulnerability in VMware's "guest-to-host" communication mechanism (SVGA II display driver) that allowed a malicious guest to overwrite host memory, achieving code execution on the host.
+
+VMware Workstation Multiple Escape Vulnerabilities (annually): Virtualization software in general and VMware products specifically are routinely found to have VM escape vulnerabilities. The Pwn2Own competition has seen VM escapes from VMware, VirtualBox, and Hyper-V demonstrated by security researchers in controlled competition environments. These represent the highest-value findings in virtualization security.
+
+**The technical mechanism of VM escape:**
+
+VM escapes almost always exploit the interface points between the guest and the hypervisor — the "attack surface" of virtualization consists of every channel through which the guest communicates with the hypervisor:
+
+Virtual device emulation: hypervisors emulate hardware devices (network cards, storage controllers, display adapters, USB controllers) in software. Each emulated device is a complex software implementation with its own parsing code for device commands from the guest. Vulnerabilities in this code (buffer overflows, integer overflows, format string bugs) allow a guest to corrupt hypervisor memory. VENOM exploited the FDC emulation. Other escapes have exploited virtual SCSI controllers, virtual SVGA displays, and USB device emulation.
+
+Shared memory and VMware tools: VMware's guest addition tools (VMware Tools) and similar software that runs inside the VM to improve performance and enable features (clipboard sharing, drag-and-drop, file sharing between host and guest) creates communication channels between guest and host. Vulnerabilities in these channels can be exploited for escape. Clipboard sharing has been a vector: specially crafted clipboard content parsed by host software to process the shared clipboard can trigger vulnerabilities.
+
+Hypercall interface: guests communicate with the hypervisor through "hypercalls" — the virtualization equivalent of system calls. If a hypervisor's hypercall handling code has vulnerabilities, malicious hypercalls can compromise the hypervisor.
+
+**The post-escape impact:**
+
+After escaping the VM and gaining execution on the hypervisor/host, an attacker can: access the memory of other VMs by reading their physical memory allocations (the hypervisor has a map of which physical memory pages belong to which VM); read and modify other VMs' virtual disk files (stored as image files on the host's filesystem); capture network traffic of other VMs (by accessing virtual switch or physical NIC interfaces); create or modify VM snapshots (gaining persistent access even if the target VM is rebooted); deploy new VMs or modify existing ones; and access the hypervisor management interface to control the entire virtualized infrastructure.
+
+**Defenses against VM escape:**
+
+Keep hypervisor software and virtual device emulation code patched — these are the highest-priority security updates in any virtualized environment. Disable unnecessary virtual devices — if a VM does not need a virtual floppy disk, USB passthrough, or parallel port, disable these emulated devices, removing attack surface. Limit hypervisor feature exposure — disable VMware Tools features not needed (drag-and-drop, clipboard sharing, file sharing) if they are not required for VM function. Deploy hypervisor integrity monitoring — VMware vSphere with vSAN encryption and host attestation, Intel TXT (Trusted Execution Technology) and AMD SEV (Secure Encrypted Virtualization) provide hardware-rooted integrity assurance.
+
+### VM Repository Vulnerabilities
+
+Virtual machine image repositories (VMware Marketplace, AWS Marketplace, Azure Marketplace, Docker Hub, OVFtool templates, Vagrant boxes) allow users to download and deploy pre-built VM images. These repositories are a significant supply chain attack vector.
+
+**The attack scenario:** An attacker creates a VM image that appears to be a legitimate, commonly used template (Ubuntu Server 22.04, CentOS 7, Kali Linux). The image includes backdoor accounts, pre-installed malware, or persistence mechanisms. The image is published to a marketplace or community repository with a convincing description. Administrators who download and deploy this image for production use unknowingly deploy backdoored VMs.
+
+This attack vector is particularly effective because the "deployment" of a downloaded VM image is trusted by default — users assume repository images are legitimate without verifying them. Cryptographic signing of VM images (VMware's signed OVF format, AWS Marketplace's image signing) can mitigate this, but verification is not universally enforced.
+
+**Hyperjacking:** A theoretical but demonstrated attack where an attacker installs a malicious, stealthy hypervisor beneath an existing operating system (using the hardware virtualization features to "push" the existing OS into a VM without its knowledge). The existing OS continues to function normally but is now running in a VM controlled by the attacker's hypervisor, which can monitor all its activities. SubVirt (Microsoft Research, 2006) and Blue Pill (Joanna Rutkowska, 2006) demonstrated this concept. While difficult to execute in practice, hyperjacking represents an ideal persistence mechanism that is extremely difficult to detect because the compromised OS has no visibility into the layer below it.
+
+---
+
+## 7.2.15 Vulnerabilities Related to Containerized Workloads
+
+### The Evolution of Compute and Its Security Implications
+
+The diagram in the course material captures an important truth: as compute architectures have evolved from physical servers through VMs to containers and serverless, flexibility and cost efficiency have increased — but so has the attack surface. Each abstraction layer adds new attack vectors.
+
+**Physical servers:** Direct hardware access. Completely isolated from other organizations' workloads. Security perimeter is clear. Slow to provision, expensive, low utilization.
+
+**Virtual machines:** Hardware is shared but strong isolation through hypervisor. Each VM has its own OS. VM escape is the primary additional risk. Faster provisioning, better utilization, higher attack surface than physical.
+
+**Containers:** Applications share the host OS kernel. Much lighter weight than VMs (start in milliseconds instead of seconds). Container isolation relies on Linux kernel namespaces and cgroups — not a separate kernel per container as in VMs. This means a kernel vulnerability can affect all containers on the same host. Container escape is easier to achieve than VM escape because the isolation is software (kernel features) rather than hardware-enforced (CPU virtualization extensions). Fastest provisioning, best utilization, highest attack surface.
+
+**Serverless:** Functions run in ephemeral containers that exist only during execution. Ultimate resource efficiency. Attack surface extends to the function code itself and the permissions granted to the function.
+
+### Container Architecture Deep Dive
+
+**Namespaces:** Linux namespaces provide the primary isolation mechanism for containers. Each container has its own:
+- PID namespace (process IDs are isolated — container processes cannot see or signal processes outside the container)
+- Network namespace (isolated network stack — different IP, routing table, firewall rules)
+- Mount namespace (isolated filesystem view — container sees only its own filesystem mounts)
+- UTS namespace (isolated hostname and domain name)
+- IPC namespace (isolated inter-process communication)
+- User namespace (isolated user and group ID mapping)
+
+**cgroups (Control Groups):** Linux cgroups limit and measure resource usage — how much CPU, memory, disk I/O, and network bandwidth a container can use. Without cgroups, a single container could consume all host resources, starving other containers.
+
+**The critical difference from VMs:** Containers share the host OS kernel. There is one Linux kernel for all containers on the host. If a process inside a container can exploit a kernel vulnerability to gain kernel-level code execution, it immediately affects all other containers on the same host — there is no hypervisor layer to catch it. Container isolation is "soft" isolation compared to VM isolation.
+
+### Container Escape Techniques
+
+Container escape is the equivalent of VM escape for containerized environments — breaking out of the container's isolation to access the host OS or other containers.
+
+**Privileged Container Escape:** The most common and straightforward container escape. Docker containers run in "unprivileged" mode by default, but running a container with `docker run --privileged` grants the container full access to the host's devices and significantly reduces kernel isolation. Privileged containers have access to all host devices including the block devices for host filesystems, making escape trivial: mount the host root filesystem (`mount /dev/sda1 /mnt/host`) and access all files on the host. In Kubernetes, `securityContext.privileged: true` on a pod has the same effect.
+
+Why privileged containers exist despite the security implications: some legitimate use cases require privileged mode (running Docker-in-Docker for CI/CD, running system-level tools that require device access). Security professionals must identify and flag all privileged containers in an assessment.
+
+**Dangerous Volume Mounts:** Mounting sensitive host directories into a container gives that container access to those host files. Mounting the Docker socket (`-v /var/run/docker.sock:/var/run/docker.sock`) gives the container full control over the Docker daemon — equivalent to root access to the host, because Docker can be used to create a privileged container that mounts the host filesystem. Mounting the host's `/etc/` gives the container the ability to modify host configuration files. Mounting the host's `/proc/` gives the container access to the host's process information.
+
+**Detection of dangerous mounts:** `docker inspect <container_id> | jq '.[].HostConfig.Binds'` shows all volume mounts. Any mount of host system directories or the Docker socket is a critical finding.
+
+**Kernel Exploit-Based Container Escape:** Since containers share the host kernel, a kernel vulnerability exploitable from within a container context can grant host root access. The key constraint is that container processes run as unprivileged users by default — the exploit must work from an unprivileged context to execute.
+
+Famous container escape CVEs:
+- CVE-2019-5736 (runc): A vulnerability in runc (the container runtime used by Docker, containerd, and Kubernetes) allowed a malicious container to overwrite the host's runc binary during execution, gaining host root code execution when runc was next invoked. Affected all major container runtimes.
+- CVE-2020-15257 (containerd): A vulnerability in the containerd-shim API allowed containers to connect to the shim's management socket and execute arbitrary code on the host.
+- CVE-2022-0847 (Dirty Pipe): A Linux kernel vulnerability allowing unprivileged users to overwrite arbitrary read-only files — exploitable from within containers to overwrite host files and gain root.
+
+**The Dirty COW Family and Kernel Exploits:** The Linux kernel CVE-2016-5195 (Dirty COW — Copy-On-Write) allowed unprivileged users to gain write access to read-only memory mappings, allowing privilege escalation to root. While containers add namespacing, they share the vulnerable kernel — a Dirty COW exploit running inside a container would gain root on the host kernel.
+
+**Namespace Escape via User Namespaces:** Linux user namespaces allow non-root processes to create new namespaces. In configurations where user namespaces are accessible, privilege escalation vulnerabilities within the namespace isolation logic can allow a container process to gain capabilities in the host's user namespace, effectively escaping isolation.
+
+### Kubernetes Security Vulnerabilities
+
+Kubernetes is the dominant container orchestration platform, managing containerized workloads at scale. Its complexity creates numerous attack surfaces.
+
+**RBAC (Role-Based Access Control) Misconfigurations:**
+
+Kubernetes RBAC controls what actions each user, service account, or group can perform. Overpermissive RBAC is the most common Kubernetes security issue. Specific dangerous permission combinations:
+
+`pods/exec` permission allows running arbitrary commands in any pod in the namespace — equivalent to shell access to every container. An attacker with `pods/exec` can exec into pods, look for secrets mounted as environment variables or files, use those secrets for lateral movement, and ultimately escalate to cluster-admin by finding secrets that grant privileged access.
+
+`secrets/get` and `secrets/list` allow reading Kubernetes secrets — including service account tokens for other service accounts, TLS private keys, and application credentials. A service account that can read all secrets in a namespace can often chain secret access into cluster-wide compromise.
+
+`clusterroles/create` or `clusterrolebindings/create` allow creating new RBAC bindings — an attacker with these permissions can grant themselves cluster-admin rights.
+
+**The Default Service Account Token:**
+
+Every Kubernetes pod is automatically mounted with a service account token unless explicitly disabled. The default service account in the default namespace often has more permissions than intended. An attacker who compromises any pod and reads the mounted service account token can then use the Kubernetes API with that token's permissions. `cat /var/run/secrets/kubernetes.io/serviceaccount/token` reads the token from within any pod.
+
+**kubectl with the stolen token:** `kubectl --token=<token> --server=https://<api_server> get pods --all-namespaces` uses the stolen token to enumerate all pods. `kubectl --token=<token> exec -it <target_pod> -- /bin/sh` shells into other pods.
+
+**The etcd Attack:**
+
+etcd is the distributed key-value store that Kubernetes uses to store all cluster state — all pod configurations, service accounts, secrets (including cryptographic keys and cloud credentials), and RBAC policies. An unauthenticated or weakly authenticated etcd is the most critical Kubernetes attack target because reading etcd gives the attacker every secret in the cluster.
+
+`etcdctl --endpoints=https://<etcd_host>:2379 get / --prefix --keys-only` lists all keys. `etcdctl --endpoints=https://<etcd_host>:2379 get /registry/secrets --prefix` dumps all Kubernetes secrets. Secrets are base64-encoded but not encrypted in etcd by default — `kubectl get secret <secret> -o jsonpath='{.data}' | base64 -d` decodes them. Kubernetes 1.13+ supports encryption at rest for etcd, but it must be explicitly configured.
+
+**Kubernetes Dashboard Exposure:**
+
+The Kubernetes Dashboard (web UI) has been exposed without authentication in numerous real-world deployments. Notable incidents: in 2018, Tesla's Kubernetes dashboard was found exposed to the internet without authentication, and attackers were using the cluster for cryptocurrency mining. A proper security assessment must check whether the Kubernetes Dashboard is accessible and whether it requires authentication.
+
+### Container Image Security
+
+**What lives in a container image:** A Docker container image is a layered filesystem containing all the software the containerized application needs — base OS, language runtimes, application code, and dependencies. Each layer is stored as a compressed tar archive and cached locally. The image includes everything the application needs but should contain nothing extra.
+
+**Vulnerability scanning:** Every package in a container image that has a known CVE represents a vulnerability in every container running that image. Container image scanners compare the package list against CVE databases:
+- Trivy: `trivy image nginx:latest` — scans the nginx image and returns all vulnerable packages, their CVEs, and severity ratings.
+- Anchore's Grype: `grype nginx:latest` — alternative scanner with different vulnerability database sources.
+- Dagda: static analysis tool checking for known vulnerabilities, Trojans, and malware in Docker images.
+
+A freshly pulled "official" image from Docker Hub typically has dozens of vulnerable packages — not because Docker Hub is poorly managed, but because vulnerabilities are continuously discovered, and any image that is not updated daily will have some known vulnerabilities.
+
+**The supply chain problem in container images:**
+
+Container images are composed of layers, with each layer potentially introducing compromised packages. The `FROM` instruction in a Dockerfile bases your image on a parent image. If the parent image is compromised — either by a malicious maintainer or by a compromised registry — all images built on it inherit the compromise.
+
+Dependency confusion in container builds: if your `apt install` or `pip install` commands install packages from public repositories, a dependency confusion attack (publishing malicious packages with internal package names to public repositories) can compromise your container image during build.
+
+**Immutable images and runtime security:**
+
+The proper security architecture for containers: build images that contain exactly what is needed, scan them for vulnerabilities before deployment, sign them with Docker Content Trust (DCT) to ensure tamper-proof distribution, enforce that only signed images can be deployed, and at runtime, monitor for any deviation from expected behavior using Falco.
+
+Falco is a runtime security monitoring tool for containers and Kubernetes. It uses a set of rules to detect suspicious behavior: `exec in container` (a shell was spawned inside a container — suspicious because well-behaved containerized applications do not need shells), `sensitive file access` (reading `/etc/shadow`, `/etc/passwd`, SSH keys), `unexpected network connection` (a container making outbound connections to unexpected destinations — possible C2 callback), and `write below root in container` (writing files in directories that should be read-only in a production container).
+
+---
+
+## 7.2.16 Practice — Vulnerabilities Related to Containerized Workloads
+
+### Container Security Assessment Workflow
+
+**Phase 1 — Image Scanning:** Before deploying any container, scan its image: `trivy image <image:tag>`. Categorize findings by severity. Critical and High findings should be addressed before deployment. Document findings with CVE numbers, affected packages, and available fixed versions.
+
+**Phase 2 — Running Container Audit:** `docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"` lists all running containers. `docker inspect <container_id> | python3 -m json.tool` provides complete container configuration. Review for: privileged mode (`"Privileged": true`), dangerous volume mounts (`"Binds"` containing host system directories or `/var/run/docker.sock`), network mode (`"NetworkMode": "host"` removes network namespace isolation), and capabilities (`"CapAdd": ["SYS_ADMIN"]` grants dangerous kernel capabilities).
+
+**Phase 3 — Kubernetes Assessment:** `kubectl get pods --all-namespaces` lists all pods. `kubectl describe pod <pod_name>` shows detailed pod configuration including security context. `kubectl get rolebindings,clusterrolebindings --all-namespaces` shows all RBAC bindings. Review for pods with `privileged: true`, missing `readOnlyRootFilesystem: true`, missing `runAsNonRoot: true`, and service accounts with excessive permissions.
+
+`kube-bench` automates Kubernetes CIS Benchmark checking: `kubectl apply -f kube-bench.yaml` runs kube-bench as a pod and outputs findings against all CIS benchmark sections. `kube-hunter` actively probes for vulnerabilities: `kube-hunter --remote <api_server_ip>` discovers anonymous access, exposed dashboard, and RBAC misconfigurations.
+
+---
+
+## 7.3 Summary — Cloud, Mobile, and IoT Security
+
+### 7.3.1 What Did I Learn in This Module?
+
+Module 7 has covered the three most rapidly growing attack surfaces in contemporary cybersecurity: cloud technologies, mobile devices, and the vast ecosystem of specialized systems including IoT, virtual machines, and containers.
+
+**From Cloud Technologies (7.1):**
+
+The cloud is not an abstraction of traditional infrastructure — it is a fundamentally different environment where the security model is inverted. In traditional networks, the default posture was "trust the inside, distrust the outside." In cloud environments, everything is outside, and trust must be explicitly granted, carefully scoped, and continuously monitored.
+
+The most impactful cloud attacks are not sophisticated exploits — they are simple exploitation of common misconfiguration and credential exposure patterns. A public S3 bucket, a hardcoded API key in a GitHub repository, an IAM role with excessive permissions, or a metadata service vulnerable to SSRF can each directly result in complete cloud account compromise, data exfiltration, or business disruption. Understanding IAM privilege escalation paths through careful permission analysis is the highest-leverage skill for cloud penetration testing.
+
+**From Specialized Systems (7.2):**
+
+Mobile devices are powerful general-purpose computers carrying extremely sensitive personal and corporate data, running in environments with no security perimeter. The combination of APK reverse engineering, certificate pinning bypass, and dynamic analysis with Frida reveals attack surfaces that are completely invisible to traditional network security tools. The OWASP Mobile Top 10 vulnerabilities — insecure storage, insecure communication, insecure authentication, insufficient cryptography — appear in the majority of real-world mobile apps assessed during security testing.
+
+IoT devices represent the intersection of the physical and digital worlds, where security failures have physical consequences. The consistent themes across IoT security are hardcoded credentials, inability to update firmware, insecure communication protocols, and weak or nonexistent authentication on management interfaces. These issues are not new — they have been documented for over a decade — yet they persist in newly manufactured devices because market incentives do not reward security investment by manufacturers.
+
+Virtual machines and containers provide critical infrastructure for modern computing but introduce their own attack surfaces. VM escape and container escape vulnerabilities allow an attacker confined to one workload to reach other workloads on the same physical host, breaking the isolation model that cloud multi-tenancy depends on. Kubernetes RBAC misconfigurations and etcd exposure are the most frequently exploited Kubernetes vulnerabilities in real assessments. Understanding these attacks is essential for both cloud penetration testers and cloud security architects.
+
+### The Unified Perspective — Attack Surface Has No Perimeter
+
+The common thread across all of Module 7 is the dissolution of the traditional security perimeter. Cloud workloads have no perimeter — they are accessed over the internet from everywhere. Mobile devices operate everywhere — home networks, coffee shop Wi-Fi, corporate offices, hotels. IoT devices are deployed everywhere — inside factories, hospitals, homes, and city infrastructure. Containers start and stop in seconds without human intervention.
+
+Security in this environment cannot rely on perimeter controls. It must be built into each system individually: identity-based access control (not network location), encryption of data at rest and in transit at every layer, principle of least privilege in every permission assignment, continuous monitoring of configuration and behavior, and supply chain integrity for every dependency.
+
+The penetration tester's role in this environment is to model what a determined attacker can achieve across these expanded attack surfaces — starting from realistic initial access positions (a leaked API key, a phishing victim's mobile credentials, physical access to an IoT device) and demonstrating the complete attack chain to business-impact outcomes.
+
+### Key Takeaways for Professional Practice
+
+**On cloud security assessment:** Every cloud engagement should begin with identity and access analysis — what IAM entities exist, what permissions they have, and whether privilege escalation paths exist. Misconfiguration assessment with tools like Prowler and ScoutSuite provides systematic coverage. Manual investigation of S3 buckets, EC2 instance roles, and exposed services completes the picture.
+
+**On mobile security assessment:** Certificate pinning bypass is the prerequisite for effective API testing. APK reverse engineering reveals hardcoded secrets, business logic, and backend API structure. Dynamic analysis with Frida reveals runtime behavior invisible to static analysis. The OWASP Mobile MASVS (Mobile Application Security Verification Standard) provides a comprehensive testing checklist.
+
+**On IoT security assessment:** Firmware acquisition and analysis is the highest-leverage activity — it reveals the complete software environment of the device before any network interaction. UART access provides a root shell on most devices that lack physical security. Protocol analysis of MQTT, Modbus, and other protocols reveals authentication weaknesses. Default credential testing against every discovered service is essential.
+
+**On virtualization and container security:** Container image scanning before deployment prevents known vulnerabilities from reaching production. Runtime security monitoring with Falco detects exploitation attempts in real time. RBAC review in Kubernetes is the highest-value activity in any Kubernetes assessment. Understanding VM escape mechanics contextualizes the risk of hypervisor vulnerabilities in shared infrastructure.
+
+---
+***— End of Module 7.2 and 7.3 —***
