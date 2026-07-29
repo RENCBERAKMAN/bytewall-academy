@@ -26717,3 +26717,33 @@ You have just finished a structured curriculum — a genuine, real accomplishmen
 ---
 
 *End of collection.*
+
+---
+
+# Ethical Hacker Awareness Notes
+
+---
+
+## Why This Exists
+
+The skills covered in this course — reconnaissance, exploitation, social engineering, network and application attacks, post-exploitation — are neutral by themselves. What makes them a legitimate profession instead of a liability is a personal, permanent understanding of the boundaries around them. This is just a simple summary of that understanding, kept close as a reminder.
+
+## Key Points to Remember
+
+- **Authorization first, always.** No system gets touched without explicit, written permission from someone who actually has the right to give it. No exceptions, no "just this once."
+- **Scope matters.** If something interesting shows up outside the agreed scope, the right move is to stop, note it down, and report it — not explore further.
+- **The law doesn't care about good intentions.** Unauthorized access is a crime in most places, regardless of why it was done or whether anything was damaged.
+- **Data gets handled carefully.** Only what's needed for the work, nothing extra, and nothing kept afterward.
+- **Vulnerabilities get reported properly** — through the right channel, with reasonable time given to fix them, never used for leverage or personal gain.
+- **Honesty in reporting matters more than the exploit itself.** No inflating findings, no hiding mistakes, no claiming credit that isn't earned.
+- **The real check happens in private**, when no one else is watching. That's the moment this actually gets tested.
+
+## Self-Acknowledgment
+
+I recognize that these skills carry real responsibility, that authorization and law are what make this work legitimate rather than harmful, and that this understanding doesn't fade with experience — it stays true for as long as I do this work.
+
+---
+
+## Thank You
+
+More than 80% of everything captured in this collection was made possible by the structure, depth, and clarity of the **Cisco Networking Academy's Ethical Hacker course**. I'm genuinely grateful that this level of comprehensive, well-organized, career-relevant security education was made available free of charge. This course gave real shape to how I think about the field — not just the tools, but the discipline behind them — and it's the foundation everything above was built on. Thank you, Cisco, for this course.
