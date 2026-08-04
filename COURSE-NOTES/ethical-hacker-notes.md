@@ -26747,3 +26747,180 @@ I recognize that these skills carry real responsibility, that authorization and 
 ## Thank You
 
 More than 80% of everything captured in this collection was made possible by the structure, depth, and clarity of the **Cisco Networking Academy's Ethical Hacker course**. I'm genuinely grateful that this level of comprehensive, well-organized, career-relevant security education was made available free of charge. This course gave real shape to how I think about the field — not just the tools, but the discipline behind them — and it's the foundation everything above was built on. Thank you, Cisco, for this course.
+
+---
+
+# NDP (Neighbor Discovery Protocol)
+
+*Siber Güvenlik Terim Rehberi — Network Katmanı (IPv6)*
+
+---
+
+## 1. Kimlik Kartı
+
+- **Tam Açılım:** Neighbor Discovery Protocol
+- **Kategori:** Protokol
+- **Ait Olduğu Katman:** OSI Katman 3 (Network) — ama ARP'nin yaptığı Katman 2-3 arası çeviri görevini de üstlenir; IPv6'ya özgüdür
+- **Port/Protokol İlişkisi:** Port kullanmaz, ICMPv6 mesajları üzerinden çalışır (ICMPv6, IP Protocol numarası 58)
+- **CVE/CVSS:** Yok — protokolün kendisi değil, implementasyon ve tasarım zafiyetleri (kimlik doğrulama eksikliği) somut CVE'lere değil, bilinen bir tasarım zaafına işaret eder
+- **MITRE ATT&CK:** T1557 (Adversary-in-the-Middle) altında NDP Spoofing/RA Spoofing tekniği doğrudan bu protokolü hedef alır
+
+> Not: IPv4 dünyasında ARP hangi işi görüyorsa, IPv6 dünyasında NDP tam olarak o işi (ve fazlasını) görür. ARP'yi anladıysan, NDP'yi "ARP'nin IPv6 için yeniden tasarlanmış, çok daha kapsamlı hali" olarak düşünebilirsin.
+
+---
+
+## 2. Neden Var Oldu (Tarihsel Bağlam)
+
+IPv6 tasarlanırken mühendisler, ARP'nin IPv4'te yıllardır süregelen sorunlarını (kimlik doğrulamasız broadcast yapısı, sadece IP-MAC çevirisi yapıp başka hiçbir şey yapmaması) fark etmişlerdi. IPv6'ya geçerken sıfırdan bir tasarım fırsatı doğdu: sadece IP-MAC çevirisi yapan dar kapsamlı bir protokol yerine, bir cihazın ağa bağlandığında ihtiyaç duyacağı **her şeyi** (komşularını bulma, router'ı keşfetme, adresini otomatik yapılandırma, adres çakışmasını tespit etme) tek bir protokol ailesinde toplama kararı alındı.
+
+1998'de RFC 4861 ile standartlaşan NDP, ARP'nin yerini almakla kalmadı — aynı zamanda IPv4'te ayrı ayrı çözülen birden fazla problemi (ARP, ICMP Router Discovery, ICMP Redirect) tek bir çerçevede birleştirdi. NDP'nin amacı, bir IPv6 cihazının hiçbir merkezi sunucuya (DHCP gibi) ihtiyaç duymadan bile ağa bağlanıp kendi kendine çalışabilmesini sağlamaktı — bu felsefe, IPv6'nın "otomatik yapılandırma" vizyonunun temel taşıdır.
+
+---
+
+## 3. Teknik Çalışma Mantığı — Adım Adım Veri Akışı
+
+NDP, ICMPv6 üzerinde taşınan 5 temel mesaj tipinden oluşur — her biri farklı bir işi çözer:
+
+| Mesaj Tipi | ICMPv6 Type | Görevi |
+|---|---|---|
+| Router Solicitation (RS) | 133 | Cihaz ağa bağlanır bağlanmaz "burada router var mı?" diye sorar |
+| Router Advertisement (RA) | 134 | Router, kendini ve ağ yapılandırma bilgilerini periyodik veya cevap olarak duyurur |
+| Neighbor Solicitation (NS) | 135 | "Bu IPv6 adresi kimde, MAC'ini söyle" — ARP Request'in NDP karşılığı |
+| Neighbor Advertisement (NA) | 136 | NS'e verilen cevap — "Bu IP bende, MAC'im budur" — ARP Reply'ın karşılığı |
+| Redirect | 137 | Router, daha iyi bir yol olduğunu bildirir |
+
+### Komşu Keşfi (Neighbor Solicitation/Advertisement) — ARP'nin Doğrudan Karşılığı
+
+```
+Cihaz A → Neighbor Solicitation (multicast: "fe80::5 kimde? MAC'ini söyle") → İlgili Multicast Grup
+Cihaz B ← Neighbor Advertisement (unicast: "fe80::5 bende, MAC'im: AA:BB:CC:DD:EE:FF") ← Cihaz A'ya
+```
+
+ARP'nin aksine, NDP mesajları **broadcast değil, multicast** kullanır — bu, ağdaki her cihazı gereksiz yere rahatsız etmek yerine sadece ilgili adres grubuna mesaj göndermeyi sağlar (verimlilik iyileştirmesi), ama kimlik doğrulama açısından temel zafiyet aynen devam eder.
+
+### SLAAC — Router Advertisement Üzerinden Otomatik Adresleme
+
+```
+1. Cihaz ağa bağlanır → Router Solicitation gönderir (multicast)
+2. Router cevap verir → Router Advertisement gönderir: "Ağ prefix'i şu: 2001:db8::/64, 
+   DNS sunucusu şu, hop limit şu"
+3. Cihaz bu prefix'i alır, kendi MAC adresinden (veya rastgele bir değerden) 
+   geriye kalan kısmı türetir → kendi global IPv6 adresini oluşturur (SLAAC)
+4. Duplicate Address Detection (DAD): Cihaz, oluşturduğu adresi kimsenin 
+   kullanmadığından emin olmak için bir Neighbor Solicitation gönderir — 
+   cevap gelmezse adres benzersizdir, güvenle kullanılabilir
+```
+
+Bu süreç, IPv4'teki DHCP'nin yaptığı işi merkezi bir sunucu olmadan, tamamen dağıtık bir şekilde başarır — router sadece ağ prefix'ini duyurur, geri kalan adres türetme işini her cihaz kendisi yapar.
+
+### Router Advertisement'ın Taşıdığı Kritik Bilgiler
+
+RA mesajı sadece "ben router'ım" demekle kalmaz, aynı zamanda **hop limit**, **MTU**, **prefix bilgisi**, hatta bazı yapılandırmalarda **DNS sunucu adresi** gibi bilgileri de taşır — bu, RA'yı IPv4'teki DHCP Offer mesajına çok benzer, ama çok daha az korumalı bir hale getirir.
+
+---
+
+## 4. Somut Gündelik Benzetme
+
+NDP'yi **yeni taşındığın bir mahallede komşularını tanıma ve mahalle muhtarını bulma süreci** gibi düşün.
+
+Yeni eve taşındığında (ağa bağlandığında) önce yüksek sesle sorarsın: "Buranın muhtarı kim, çıksın konuşalım?" (**Router Solicitation**). Muhtar (**router**) çıkar ve sana mahallenin kurallarını anlatır: "Bu mahallenin posta kodu şu (**prefix**), en fazla şu kadar aracıyla mektup gönderebilirsin (**hop limit**), postane şurada (**DNS bilgisi**)" (**Router Advertisement**). Sen bu bilgilerle kendi ev adresini kendin oluşturursun — muhtara "bana bir adres ver" demene gerek yoktur, posta kodunu alıp kendi ev numaranı (MAC adresinden türeterek) kendin belirlersin (**SLAAC**). Adresi belirledikten sonra mahalleye "bu adres başka biri tarafından kullanılıyor mu?" diye sorarsın, kimse itiraz etmezse o adresi güvenle kullanmaya başlarsın (**Duplicate Address Detection**). Bir komşunu (başka bir cihazı) bulmak istediğinde ise sokakta bağırırsın: "Bu isimde biri var mı, yüzünü göreyim?" (**Neighbor Solicitation**), o kişi çıkıp "Benim, işte yüzüm" der (**Neighbor Advertisement**) — tıpkı ARP'deki gibi, ama artık herkese değil, sadece ilgili gruba (**multicast**) seslenerek.
+
+| NDP Kavramı | Mahalle Benzetmesi |
+|---|---|
+| Router Solicitation | "Muhtar kim, çıksın" diye sormak |
+| Router Advertisement | Muhtarın posta kodu ve kuralları anlatması |
+| SLAAC | Posta koduyla kendi ev numaranı türetmek |
+| Duplicate Address Detection | "Bu adres kullanılıyor mu?" diye sormak |
+| Neighbor Solicitation/Advertisement | Komşunu bulup yüzünü doğrulaman |
+
+---
+
+## 5. Saldırgan Senaryosu
+
+Bir saldırgan NDP'yi, ARP Spoofing'in IPv6 dünyasındaki doğrudan karşılığı olarak **lateral movement** aşamasında kullanır — mantık birebir aynıdır, sadece protokol ve mesaj tipleri değişir.
+
+**Adım adım senaryo:**
+
+1. **Keşif — IPv6 Farkındalığı:** Saldırgan ağa girdikten sonra, kurumun IPv4 firewall'ını sıkı ama IPv6'yı gözden kaçırdığını fark eder — çünkü modern işletim sistemleri IPv6'yı varsayılan olarak açık tutar ve otomatik SLAAC ile adres alır, kimse bu trafiği izlemiyor olabilir.
+
+2. **Rogue Router Advertisement — MITM Başlangıcı:** Saldırgan `parasite6` veya `fake_router6` (THC-IPv6 araç setinden) ile sahte bir **Router Advertisement** yayınlamaya başlar: "Ben bu ağın router'ıyım, tüm trafiği bana yönlendirin" der. Bunu bilinçli seçer çünkü RA mesajlarının hiçbir kimlik doğrulaması yoktur — ağdaki her cihaz bu duyuruyu, gerçek router'dan gelenle aynı güvenilirlikte kabul eder.
+
+3. **Trafik Ele Geçirme:** Ağdaki cihazlar, saldırganın sahte router'ını gerçek router sanıp trafiklerini ona yönlendirmeye başlar (**MITM**) — saldırgan bu trafiği gerçek router'a iletir (forwarding açarak), kurbanlar hiçbir kesinti fark etmez.
+
+4. **DoS Alternatifi — Router Advertisement Flooding:** Eğer amaç sadece kesinti yaratmaksa, saldırgan `flood_router6` ile saniyede binlerce sahte Router Advertisement gönderir — her mesaj farklı bir prefix duyurduğu için, alıcı cihazlar sürekli yeni adresler oluşturmaya (SLAAC) çalışır, CPU ve bellek tükenir, sistemler donar veya çöker (**Neighbor Discovery / SLAAC DoS**).
+
+---
+
+## 6. Savunma Senaryosu
+
+**Triage akışı:**
+
+- **Rogue Router Advertisement şüphesi:** IDS/IPS'te, bilinen ve yetkili router'ın MAC/IP adresi dışında bir kaynaktan gelen Router Advertisement (ICMPv6 Type 134) mesajları görülür — Suricata kuralı örneği: `alert icmp6 any any -> any any (icmp6type:134; msg:"Unexpected Router Advertisement — possible rogue RA";)`
+
+- **RA Flooding şüphesi:** SIEM'de kısa sürede anormal sayıda farklı prefix duyuran Router Advertisement mesajı, ya da CPU/bellek kullanımında ani sıçramayla eş zamanlı ICMPv6 trafiği artışı görülür.
+
+- **Doğrulama:** Şüpheli RA'nın kaynağının MAC adresi, bilinen router'ların OUI (üretici öneki) listesiyle karşılaştırılır; THC-IPv6 gibi araçların ürettiği paketlerde genelde tutarsız veya rastgele MAC önekleri görülür.
+
+**Hardening:**
+
+- **RA Guard**, switch seviyesinde sadece belirlenmiş, güvenilir portlardan gelen Router Advertisement mesajlarını kabul eder — bu, ARP Spoofing'e karşı Dynamic ARP Inspection'ın (DAI) yaptığı işin NDP karşılığıdır ve en etkili kurumsal önlemdir
+- **SEND (Secure Neighbor Discovery, RFC 3971)**, NDP mesajlarına kriptografik imza ekleyerek kimlik doğrulaması sağlar — teoride en güçlü çözümdür ama karmaşıklığı yüzünden pratikte çok az kurulur
+- **IPv6 trafiğinin de IPv4 kadar sıkı izlenmesi ve loglanması**, "dual-stack kör noktası"nı kapatır — pek çok kurumun gözden kaçırdığı en temel adımdır
+
+---
+
+## 7. Zafiyet / Kötüye Kullanım Noktaları
+
+NDP'nin zafiyeti, ARP'ninkiyle şaşırtıcı derecede benzerdir — IPv6 tasarlanırken pek çok eski sorun çözüldü ama **kimlik doğrulaması eksikliği kasıtlı olarak SEND'e (opsiyonel bir eklentiye) bırakıldı**, temel protokolün kendisi hâlâ güven varsayımı üzerine kuruludur.
+
+- **Router Advertisement'ın doğrulanmaması**, herhangi bir cihazın kendini "router" gibi tanıtıp tüm ağın trafiğini yönlendirebilmesine izin verir — bu, ARP'deki Gratuitous ARP zafiyetinin neredeyse birebir NDP karşılığıdır.
+- **SLAAC'ın otomatik ve güvenli olduğu varsayımı**, pek çok kurumun IPv6'yı "biz zaten kullanmıyoruz" diyerek izlemesiz bırakmasına, ama işletim sistemlerinin yine de SLAAC ile otomatik adres almasına yol açar — bu çelişki, ciddi bir kör nokta yaratır.
+- **SEND'in karmaşıklığı ve düşük benimsenme oranı**, teorik çözümün var olmasına rağmen pratikte neredeyse hiçbir kurumsal ağda gerçek koruma sağlamamasına neden olur.
+
+> **Tarihsel örnek:** THC-IPv6 araç setinin (Marc "van Hauser" Heuse tarafından geliştirildi) yayınlanması, NDP zafiyetlerinin (fake_router6, flood_router6, parasite6 gibi araçlarla) pratikte ne kadar kolay istismar edilebildiğini kamuoyuna göstererek, güvenlik camiasında "IPv6'nın ARP Spoofing'den daha kötü bir NDP problemi var" farkındalığının yaygınlaşmasına doğrudan yol açtı.
+
+---
+
+## 8. Sık Karıştırılan Kavramlar
+
+| Kavram | Fark |
+|---|---|
+| **NDP vs ARP** | NDP, IPv6'ya özgüdür ve ICMPv6 üzerinde multicast kullanır; ARP, IPv4'e özgüdür ve kendi başına broadcast kullanır — işlevleri aynı ama mekanizmaları farklıdır |
+| **Router Advertisement vs DHCP** | RA, router'ın kendiliğinden ağ bilgisini duyurmasıdır (SLAAC'ın temeli); DHCP, istemcinin özel olarak bir sunucudan adres talep etmesidir — IPv6'da ikisi birlikte de kullanılabilir (DHCPv6) |
+| **NDP Spoofing vs ARP Spoofing** | İkisi de kavramsal olarak aynı saldırıdır (yerel ağda sahte kimlik duyurusu); NDP Spoofing, RA veya NA mesajlarını sahteler, ARP Spoofing ise ARP Reply/Gratuitous ARP mesajlarını sahteler |
+| **SEND vs IPSec** | SEND, özellikle NDP mesajlarını kriptografik olarak doğrulamak için tasarlanmıştır; IPSec, genel IP trafiğinin bütünlüğünü ve gizliliğini korur — ikisi farklı katmanlarda, farklı kapsamda çalışır |
+
+---
+
+## 9. Mülakat Sorusu Simülasyonu
+
+**Soru:** *"NDP'nin multicast kullanması, ARP'nin broadcast kullanmasına göre güvenlik açısından gerçekten bir iyileştirme mi, yoksa sadece verimlilik iyileştirmesi mi? Açıkla."*
+
+<details>
+<summary>Model Cevabı</summary>
+
+<br>
+
+Bu, sadece bir **verimlilik iyileştirmesidir, güvenlik iyileştirmesi değildir** — ve bu ayrımı yapabilmek NDP'yi gerçekten anlamanın anahtarıdır. ARP'de bir Request, ağdaki her cihaza (broadcast) gönderilir, bu da özellikle büyük ağlarda gereksiz trafik yaratır; NDP'de ise Neighbor Solicitation, hedef adresin son bitlerine göre hesaplanan özel bir multicast grubuna (solicited-node multicast) gönderilir, böylece sadece o adrese yakın cihazlar mesajı işler — bu, ağ performansını artırır. Ancak güvenlik açısından hiçbir fark yoktur: multicast grubuna kimin katılabileceği konusunda da hiçbir kimlik doğrulaması yapılmaz, herhangi bir kötü niyetli cihaz o multicast grubunu dinleyebilir ve gruba sahte mesaj gönderebilir. Router Advertisement mesajları ise zaten tüm-node multicast grubuna (ff02::1) gönderilir ki bu pratikte broadcast'e çok yakın bir davranıştır — yani NDP'nin multicast tercihi, ARP'nin temel zafiyetini (kimlik doğrulamasız, herkesin güvenilir sayıldığı bir duyuru sistemi) hiçbir şekilde çözmez, sadece ağ trafiğini optimize eder. Gerçek güvenlik ancak SEND gibi ek bir kriptografik katmanla veya RA Guard gibi switch seviyesi önlemlerle sağlanabilir.
+
+</details>
+
+---
+
+## 10. Hafıza Çapası
+
+**NDP = IPv6'nın mahalle muhtarlık sistemi; herkes muhtar olduğunu iddia edebilir, kimse kimlik sormaz — ARP'nin yıllardır çözülemeyen "kime güveneceğiz" sorununu IPv6, daha zarif bir protokolle yeniden sordu ama yine cevapsız bıraktı.**
+
+---
+
+## 11. Sadece Ezberlenecek Çıplak Veri
+
+- **ICMPv6 Type 133:** Router Solicitation (RS)
+- **ICMPv6 Type 134:** Router Advertisement (RA)
+- **ICMPv6 Type 135:** Neighbor Solicitation (NS)
+- **ICMPv6 Type 136:** Neighbor Advertisement (NA)
+- **ICMPv6 Type 137:** Redirect
+- **IP Protocol numarası (ICMPv6):** 58
+- **IPv4 karşılığı:** ARP
+
+---
